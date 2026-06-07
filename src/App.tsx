@@ -18,7 +18,11 @@ import {
   GraduationCap,
   Linkedin,
   ExternalLink,
-  User
+  User,
+  Cloud,
+  RefreshCw,
+  LogOut,
+  AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -26,6 +30,7 @@ import { HabitHistory } from './types';
 import { formatDate, getDaysInMonth, getFirstDayOfMonth } from './utils/dateHelpers';
 import { audioEngine } from './utils/audio';
 import Companion from './components/Companion';
+import { googleDriveService } from './utils/googleDriveService';
 
 export default function App() {
   // --- State Management ---
@@ -48,6 +53,85 @@ export default function App() {
   const [showDevInfo, setShowDevInfo] = useState<boolean>(false);
   const [isRecentlyCompleted, setIsRecentlyCompleted] = useState<boolean>(false);
   const [companionAction, setCompanionAction] = useState<{ type: 'check' | 'uncheck' | 'complete_all'; timestamp: number } | null>(null);
+
+  // --- Google Drive State Integration & Subscription ---
+  const [driveState, setDriveState] = useState(() => googleDriveService.getState());
+  const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  useEffect(() => {
+    // Initialize google auth listener
+    googleDriveService.init();
+
+    // Subscribe to state changes and sync component state reactively
+    const unsubscribe = googleDriveService.subscribe((state) => {
+      setDriveState(state);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Manual Backup Action
+  const handleCloudBackup = async () => {
+    setSyncFeedback({ type: 'info', message: 'Saving tasks and progress to Google Drive...' });
+    const payload = {
+      tasks,
+      history,
+      hasStarted,
+      companionType,
+      updatedAt: new Date().toISOString()
+    };
+    const success = await googleDriveService.saveToDrive(payload);
+    if (success) {
+      setSyncFeedback({ type: 'success', message: 'History backup successfully saved to Google Drive!' });
+    } else {
+      const currentErr = googleDriveService.getState().error || 'Failed to save file. Check details.';
+      setSyncFeedback({ type: 'error', message: `Backup failed: ${currentErr}` });
+    }
+    setTimeout(() => setSyncFeedback(null), 5000);
+  };
+
+  // Manual Restore Action
+  const handleCloudRestore = async () => {
+    const confirmRestore = window.confirm(
+      "Are you sure you want to load data from Google Drive? This will replace your local routines and history records with the backup file."
+    );
+    if (!confirmRestore) return;
+
+    setSyncFeedback({ type: 'info', message: 'Fetching file from Google Drive...' });
+    const data = await googleDriveService.loadFromDrive();
+    if (data) {
+      if (Array.isArray(data.tasks)) setTasks(data.tasks);
+      if (data.history) setHistory(data.history);
+      if (typeof data.hasStarted === 'boolean') setHasStarted(data.hasStarted);
+      if (data.companionType) setCompanionType(data.companionType);
+      
+      setSyncFeedback({ type: 'success', message: 'Backup successfully loaded! Local state updated.' });
+      audioEngine?.playSuccessChime?.();
+    } else {
+      const currentErr = googleDriveService.getState().error || 'No backup found under Google Drive.';
+      setSyncFeedback({ type: 'error', message: `Restore failed: ${currentErr}` });
+    }
+    setTimeout(() => setSyncFeedback(null), 5000);
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      await googleDriveService.signIn();
+      setSyncFeedback({ type: 'success', message: 'Successfully signed in with Google! You can now write and restore progress.' });
+      setTimeout(() => setSyncFeedback(null), 5000);
+    } catch (err: any) {
+      setSyncFeedback({ type: 'error', message: err.message || 'Login cancelled.' });
+      setTimeout(() => setSyncFeedback(null), 5000);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    await googleDriveService.signOut();
+    setSyncFeedback({ type: 'info', message: 'Signed out of Google session.' });
+    setTimeout(() => setSyncFeedback(null), 4000);
+  };
 
   // --- Daily Completion Percentage for Shih Tzu Happiness ---
   const currentDateCompletionPercentage = useMemo(() => {
@@ -330,6 +414,85 @@ export default function App() {
               >
                 Enter Habit Flow
               </motion.button>
+
+              {/* Google Drive Connection Row on Home Page */}
+              <div className="mt-5 border-t border-dashed border-slate-200/40 dark:border-slate-800/80 pt-4">
+                {syncFeedback && (
+                  <div className={`p-2.5 mb-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                    syncFeedback.type === 'success' 
+                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' 
+                      : syncFeedback.type === 'error'
+                      ? 'bg-red-500/10 border border-red-500/20 text-red-400'
+                      : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400'
+                  }`}>
+                    {syncFeedback.type === 'error' ? <AlertCircle className="w-3.5 h-3.5" /> : null}
+                    <span>{syncFeedback.message}</span>
+                  </div>
+                )}
+
+                {!driveState.isLoggedIn ? (
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    id="btn-landing-google-signin"
+                    className={`w-full flex items-center justify-center gap-2.5 px-4 py-3 border rounded-2xl transition-all cursor-pointer font-bold text-xs md:text-sm hover:shadow-md active:scale-[0.98] ${
+                      darkMode
+                        ? 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-slate-200'
+                        : 'bg-white hover:bg-slate-50 border-slate-250 text-slate-700 shadow-sm'
+                    }`}
+                  >
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4 shrink-0 block">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                    </svg>
+                    <span>Back up on Google Drive</span>
+                  </button>
+                ) : (
+                  <div className={`p-2.5 rounded-2xl border flex items-center justify-between ${
+                    darkMode ? 'bg-slate-850/60 border-slate-800' : 'bg-slate-50 border-slate-150'
+                  }`}>
+                    <div className="flex items-center gap-2 min-w-0 text-left">
+                      {driveState.userProfile?.photoURL ? (
+                        <img 
+                          src={driveState.userProfile.photoURL} 
+                          alt="Google profile" 
+                          referrerPolicy="no-referrer"
+                          className="w-6 h-6 rounded-full border border-slate-300"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-[10px] font-bold">
+                          <User className="w-3 h-3" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className={`block text-[11px] font-bold truncate ${darkMode ? 'text-slate-200' : 'text-slate-850'}`}>
+                          Connected: {driveState.userProfile?.displayName || 'Active Member'}
+                        </span>
+                        <span className="block text-[9px] text-slate-400 truncate">
+                          Drive auto-sync active
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        id="btn-landing-google-signout"
+                        onClick={handleGoogleLogout}
+                        title="Sign out from Google Session"
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer text-[10px] font-bold flex items-center gap-1 ${
+                          darkMode ? 'hover:bg-slate-800 text-slate-400 hover:text-red-400' : 'hover:bg-slate-200 text-slate-500 hover:text-red-600'
+                        }`}
+                      >
+                        <LogOut className="w-3 h-3" />
+                        <span className="hidden sm:inline text-[9px]">Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </motion.div>
         ) : (
@@ -478,7 +641,7 @@ export default function App() {
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800'
                     }`}
                   >
-                    Landing
+                    Home
                   </button>
                   <button 
                     id="btn-header-toggle-dark"
@@ -881,7 +1044,154 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                    
+
+                    {/* Google Drive Cloud Sync Panel */}
+                    <div className={`p-4 rounded-2xl border mb-6 transition-all ${
+                      darkMode 
+                        ? 'bg-slate-800/40 border-slate-700/60 shadow-[0_0_15px_rgba(99,102,241,0.15)]' 
+                        : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="font-bold text-xs md:text-sm block flex items-center gap-1.5">
+                            <Cloud className={`w-4 h-4 ${driveState.isLoggedIn ? 'text-cyan-400' : 'text-slate-400'}`} />
+                            Cloud Synchronization
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">Save your routines on Google Drive</span>
+                        </div>
+                        {driveState.isLoggedIn && (
+                          <div className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-full ${
+                              driveState.driveConnectionStatus === 'syncing' ? 'bg-amber-400 animate-pulse' :
+                              driveState.driveConnectionStatus === 'error' ? 'bg-red-500' : 'bg-emerald-400'
+                            }`} />
+                            <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400">
+                              {driveState.driveConnectionStatus === 'syncing' ? 'Syncing...' :
+                               driveState.driveConnectionStatus === 'error' ? 'Error' : 'Synced'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Sync Feedback Alert */}
+                      {syncFeedback && (
+                        <div className={`p-2.5 mb-4 rounded-xl text-xs font-semibold flex items-start gap-2 ${
+                          syncFeedback.type === 'success' 
+                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' 
+                            : syncFeedback.type === 'error'
+                            ? 'bg-red-500/10 border border-red-500/20 text-red-400'
+                            : 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-400'
+                        }`}>
+                          {syncFeedback.type === 'error' ? <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /> : null}
+                          <span>{syncFeedback.message}</span>
+                        </div>
+                      )}
+
+                      {!driveState.isLoggedIn ? (
+                        <div className="flex flex-col items-center justify-center p-3 text-center">
+                          <p className="text-[11px] font-medium text-slate-400 mb-3.5 leading-relaxed row-auto">
+                            Connect your Google account safely to automatically back up habits & tracking consistency data.
+                          </p>
+                          <button
+                            type="button"
+                            id="btn-google-signin"
+                            onClick={handleGoogleLogin}
+                            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white text-slate-755 border border-slate-300 rounded-xl hover:bg-slate-50 active:bg-slate-100 transition-all cursor-pointer font-bold text-xs md:text-sm hover:shadow-md active:scale-[0.98]"
+                          >
+                            <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-5 h-5 shrink-0 block">
+                              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                            </svg>
+                            <span>Sign in with Google</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
+                            darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-150'
+                          }`}>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {driveState.userProfile?.photoURL ? (
+                                <img 
+                                  src={driveState.userProfile.photoURL} 
+                                  alt="Google profile" 
+                                  referrerPolicy="no-referrer"
+                                  className="w-7 h-7 rounded-full border border-slate-300"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">
+                                  <User className="w-3.5 h-3.5" />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <span className={`block text-xs font-bold truncate ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                                  {driveState.userProfile?.displayName || 'Active Member'}
+                                </span>
+                                <span className="block text-[9px] text-slate-400 truncate font-mono">
+                                  {driveState.userProfile?.email}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              id="btn-google-signout"
+                              onClick={handleGoogleLogout}
+                              title="Sign out from Google Session"
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                                darkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-105 text-slate-500'
+                              }`}
+                            >
+                              <LogOut className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              id="btn-cloud-backup"
+                              disabled={driveState.driveConnectionStatus === 'syncing'}
+                              onClick={handleCloudBackup}
+                              className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                                driveState.driveConnectionStatus === 'syncing'
+                                  ? 'opacity-60 cursor-not-allowed'
+                                  : darkMode
+                                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20'
+                                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200'
+                              }`}
+                            >
+                              <Cloud className="w-3.5 h-3.5" />
+                              <span>Back up now</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              id="btn-cloud-restore"
+                              disabled={driveState.driveConnectionStatus === 'syncing'}
+                              onClick={handleCloudRestore}
+                              className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                                driveState.driveConnectionStatus === 'syncing'
+                                  ? 'opacity-60 cursor-not-allowed'
+                                  : darkMode
+                                    ? 'bg-slate-900 border-slate-800 text-slate-350 hover:bg-slate-850 hover:text-white'
+                                    : 'bg-white border-slate-250 text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 ${driveState.driveConnectionStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                              <span>Load Backup</span>
+                            </button>
+                          </div>
+
+                          {driveState.lastSynced && (
+                            <div className="text-[9px] text-center font-mono font-medium text-slate-400">
+                              Last Backup: {driveState.lastSynced}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <div className="space-y-3 max-h-[35vh] overflow-y-auto pr-1">
                       {tasks.map((t, i) => (
                         <div key={i} className="flex gap-2 items-center">

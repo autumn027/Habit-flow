@@ -70,6 +70,7 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
   
   const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
   const tempPhraseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const wakeIndexRef = useRef(0);
 
   // Math safety: handle division by zero
   const completionPercentage = useMemo(() => {
@@ -127,6 +128,25 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
       if (isSleeping) {
         setIsSleeping(false);
         setIsWakingUp(true);
+
+        // Clear any running temp phrase timers
+        if (tempPhraseTimeoutRef.current) {
+          clearTimeout(tempPhraseTimeoutRef.current);
+        }
+
+        // Trigger alternating cute awake dialogue sequentially
+        const wakePhrases = [
+          "you are back cutie 💕",
+          "Back for more magic? I knew you’d return 😅"
+        ];
+        const chosen = wakePhrases[wakeIndexRef.current % wakePhrases.length];
+        wakeIndexRef.current += 1;
+        setTemporaryPhrase(chosen);
+
+        // Set fallback timeout to clear temporary awake phrase
+        tempPhraseTimeoutRef.current = setTimeout(() => {
+          setTemporaryPhrase(null);
+        }, 5000);
 
         if (resolvedCompanion === 'white_cat' || resolvedCompanion === 'black_witch_cat') {
           // Feline Wake-up stretch (scaleX/scaleY springs and elastic hop)
