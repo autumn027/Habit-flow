@@ -72,6 +72,35 @@ export default function App() {
     };
   }, []);
 
+  // --- Auto Today Date Sync on Website Clicks ---
+  useEffect(() => {
+    const handleWebClick = (e: MouseEvent) => {
+      const isCalendarInteracting = (e.target as HTMLElement).closest('[id^="btn-date-"], #btn-prev-month, #btn-next-month');
+      
+      if (!isCalendarInteracting) {
+        const todayStr = formatDate(new Date());
+        
+        setSelectedDate((prevSelected) => {
+          if (prevSelected !== todayStr) {
+            return todayStr;
+          }
+          return prevSelected;
+        });
+
+        setViewDate((prevView) => {
+          const today = new Date();
+          if (prevView.getMonth() !== today.getMonth() || prevView.getFullYear() !== today.getFullYear()) {
+            return today;
+          }
+          return prevView;
+        });
+      }
+    };
+    
+    window.addEventListener('click', handleWebClick);
+    return () => window.removeEventListener('click', handleWebClick);
+  }, []);
+
   // Manual Backup Action
   const handleCloudBackup = async () => {
     setSyncFeedback({ type: 'info', message: 'Saving tasks and progress to Google Drive...' });
