@@ -22,7 +22,12 @@ import {
   Cloud,
   RefreshCw,
   LogOut,
-  AlertCircle
+  AlertCircle,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -32,12 +37,23 @@ import { audioEngine } from './utils/audio';
 import Companion from './components/Companion';
 import { googleDriveService } from './utils/googleDriveService';
 
+// Dashboard and achievement service imports
+import Dashboard from './components/Dashboard';
+import { calculateStatsAndMilestones, MILESTONES, Milestone } from './utils/achievementService';
+
 export default function App() {
   // --- State Management ---
   const [hasStarted, setHasStarted] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [companionType, setCompanionType] = useState<'auto' | 'white_cat' | 'black_witch_cat' | 'wise_owl'>('auto');
   
+  // Dashboard & UX Customization States
+  const [currentView, setCurrentView] = useState<'tracker' | 'dashboard'>('tracker');
+  const [soundMuted, setSoundMuted] = useState<boolean>(false);
+  const [monthlyGoal, setMonthlyGoal] = useState<number>(60);
+  const [unlockedMilestones, setUnlockedMilestones] = useState<string[]>([]);
+  const [activeMilestoneCelebration, setActiveMilestoneCelebration] = useState<Milestone | null>(null);
+
   // Start with 3 tasks for 1st use, as requested
   const [tasks, setTasks] = useState<string[]>([
     "Morning Meditation", 
@@ -109,6 +125,7 @@ export default function App() {
       history,
       hasStarted,
       companionType,
+      monthlyGoal,
       updatedAt: new Date().toISOString()
     };
     const success = await googleDriveService.saveToDrive(payload);
@@ -135,6 +152,7 @@ export default function App() {
       if (data.history) setHistory(data.history);
       if (typeof data.hasStarted === 'boolean') setHasStarted(data.hasStarted);
       if (data.companionType) setCompanionType(data.companionType);
+      if (typeof data.monthlyGoal === 'number' && data.monthlyGoal > 0) setMonthlyGoal(data.monthlyGoal);
       
       setSyncFeedback({ type: 'success', message: 'Backup successfully loaded! Local state updated.' });
       audioEngine?.playSuccessChime?.();
@@ -206,7 +224,11 @@ export default function App() {
           history: savedHistory, 
           hasStarted: savedStarted, 
           darkMode: savedDarkMode,
-          companionType: savedCompanionType
+          companionType: savedCompanionType,
+          soundMuted: savedSoundMuted,
+          unlockedMilestones: savedUnlocked,
+          currentView: savedView,
+          monthlyGoal: savedMonthlyGoal
         } = JSON.parse(savedData);
         if (Array.isArray(savedTasks) && savedTasks.length >= 1 && savedTasks.length <= 10) {
           setTasks(savedTasks);
@@ -223,6 +245,23 @@ export default function App() {
         if (savedCompanionType && ['auto', 'white_cat', 'black_witch_cat', 'wise_owl'].includes(savedCompanionType)) {
           setCompanionType(savedCompanionType);
         }
+        if (typeof savedSoundMuted === 'boolean') {
+          setSoundMuted(savedSoundMuted);
+          audioEngine.setMuted(savedSoundMuted);
+        }
+        if (typeof savedMonthlyGoal === 'number' && savedMonthlyGoal > 0) {
+          setMonthlyGoal(savedMonthlyGoal);
+        }
+        if (Array.isArray(savedUnlocked)) {
+          setUnlockedMilestones(savedUnlocked);
+        } else if (savedHistory) {
+          // Fallback check to avoid empty unlock lists if user has records
+          const stats = calculateStatsAndMilestones(savedHistory, (savedTasks || tasks).length);
+          setUnlockedMilestones(stats.unlockedList);
+        }
+        if (savedView === 'tracker' || savedView === 'dashboard') {
+          setCurrentView(savedView);
+        }
       }
     } catch (e) {
       console.error("Error reading habit data from localStorage", e);
@@ -235,9 +274,49 @@ export default function App() {
       history, 
       hasStarted, 
       darkMode, 
-      companionType 
+      companionType,
+      soundMuted,
+      unlockedMilestones,
+      currentView,
+      monthlyGoal
     }));
-  }, [tasks, history, hasStarted, darkMode, companionType]);
+  }, [tasks, history, hasStarted, darkMode, companionType, soundMuted, unlockedMilestones, currentView, monthlyGoal]);
+
+  // Hook state to service
+  useEffect(() => {
+    audioEngine.setMuted(soundMuted);
+  }, [soundMuted]);
+
+  // --- Check for newly unlocked milestones ---
+  const checkMilestoneUnlocks = (currentHistory: HabitHistory) => {
+    // Only check if we are in started view to avoid popups on startup load
+    if (!hasStarted) return;
+    const stats = calculateStatsAndMilestones(currentHistory, tasks.length);
+    const newUnlocked = stats.unlockedList;
+    
+    // Find if there is any milestone in newUnlocked that is not in the existing unlockedMilestones
+    const newlyEarned = newUnlocked.filter(id => !unlockedMilestones.includes(id));
+    
+    if (newlyEarned.length > 0) {
+      // Pick the first newly earned achievement
+      const achievedId = newlyEarned[0];
+      const milestone = MILESTONES.find(m => m.id === achievedId);
+      if (milestone) {
+        // Trigger celebration modal
+        setActiveMilestoneCelebration(milestone);
+        audioEngine.playLevelUpSound();
+        
+        // Massive celebratory fireworks
+        confetti({
+          particleCount: 180,
+          spread: 85,
+          origin: { y: 0.45 },
+          colors: ['#10b981', '#06b6d4', '#eab308', '#ec4899', '#6366f1']
+        });
+      }
+      setUnlockedMilestones(newUnlocked);
+    }
+  };
 
   // --- Logic Handlers ---
   const toggleTask = (taskIndex: number) => {
@@ -277,6 +356,9 @@ export default function App() {
       audioEngine.playSuccessChime();
       triggerCelebration();
     }
+
+    // Interactive milestone unlock verifier
+    checkMilestoneUnlocks(updatedHistory);
   };
 
   const triggerCelebration = () => {
@@ -301,6 +383,32 @@ export default function App() {
   };
 
   // --- Settings Handlers ---
+  const moveTask = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === tasks.length - 1) return;
+    
+    const partnerIndex = direction === 'up' ? index - 1 : index + 1;
+    const reordered = [...tasks];
+    const temp = reordered[index];
+    reordered[index] = reordered[partnerIndex];
+    reordered[partnerIndex] = temp;
+    setTasks(reordered);
+
+    // Map history indices so completions correspond correctly to swapped habits
+    const updatedHistory: HabitHistory = {};
+    Object.keys(history).forEach((dateStr) => {
+      const dayHistory = history[dateStr] || [];
+      const newDayHistory = dayHistory.map((idx) => {
+        if (idx === index) return partnerIndex;
+        if (idx === partnerIndex) return index;
+        return idx;
+      });
+      updatedHistory[dateStr] = newDayHistory;
+    });
+    setHistory(updatedHistory);
+    audioEngine.playCheckPop();
+  };
+
   const removeTaskInSettings = (indexToRemove: number) => {
     if (tasks.length <= 1) return; // Must keep at least one habit
     
@@ -699,7 +807,72 @@ export default function App() {
                 </div>
               </header>
 
-              <div id="main-grid" className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* View Switcher Segmented Tabs Option */}
+              <div id="nav-segmented-tabs" className="flex justify-center mb-8 select-none">
+                <div className={`p-1 rounded-2xl border flex gap-1 ${
+                  darkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200/60 shadow-sm'
+                }`}>
+                  <button
+                    type="button"
+                    id="tab-view-tracker"
+                    onClick={() => {
+                      setCurrentView('tracker');
+                      audioEngine.playCheckPop();
+                    }}
+                    className={`px-5 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      currentView === 'tracker'
+                        ? darkMode
+                          ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-[0_0_12px_rgba(34,211,238,0.25)]'
+                          : 'bg-slate-800 text-white shadow-md'
+                        : darkMode
+                          ? 'text-slate-400 hover:text-slate-200'
+                          : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 animate-pulse" />
+                    <span>Daily Tracker</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="tab-view-dashboard"
+                    onClick={() => {
+                      setCurrentView('dashboard');
+                      audioEngine.playCheckPop();
+                    }}
+                    className={`px-5 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      currentView === 'dashboard'
+                        ? darkMode
+                          ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-[0_0_12px_rgba(34,211,238,0.25)]'
+                          : 'bg-slate-800 text-white shadow-md'
+                        : darkMode
+                          ? 'text-slate-400 hover:text-slate-200'
+                          : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Trophy className="w-3.5 h-3.5" />
+                    <span>Consistency Hub</span>
+                  </button>
+                </div>
+              </div>
+
+              {currentView === 'dashboard' ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Dashboard
+                    history={history}
+                    tasks={tasks}
+                    darkMode={darkMode}
+                    soundMuted={soundMuted}
+                    monthlyGoal={monthlyGoal}
+                    onToggleSound={() => setSoundMuted(!soundMuted)}
+                    onBackToTracker={() => setCurrentView('tracker')}
+                  />
+                </motion.div>
+              ) : (
+                <div id="main-grid" className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
                 {/* Left Column: Calendar */}
                 <section id="calendar-section" className={`rounded-3xl p-6 border transition-all duration-300 lg:col-span-7 ${
@@ -952,6 +1125,7 @@ export default function App() {
                   </div>
                 </section>
               </div>
+            )}
             </div>
 
             {/* Settings Modal */}
@@ -1222,41 +1396,91 @@ export default function App() {
                     </div>
 
                     <div className="space-y-3 max-h-[35vh] overflow-y-auto pr-1">
-                      {tasks.map((t, i) => (
-                        <div key={i} className="flex gap-2 items-center">
-                          <span className={`text-xs font-mono font-bold w-5 text-center ${
-                            darkMode ? 'text-indigo-400' : 'text-slate-400'
-                          }`}>{(i + 1).toString().padStart(2, '0')}</span>
-                          <input
-                            id={`input-habit-${i}`}
-                            value={t}
-                            onChange={(e) => {
-                              const newTasks = [...tasks];
-                              newTasks[i] = e.target.value;
-                              setTasks(newTasks);
-                            }}
-                            className={`flex-1 px-4 py-2.5 border rounded-xl focus:ring-2 focus:bg-white outline-none transition-all text-sm font-semibold ${
-                              darkMode 
-                                ? 'bg-slate-800/80 border-slate-705 text-slate-100 focus:text-slate-900 focus:ring-cyan-500' 
-                                : 'bg-slate-50 hover:bg-slate-100/50 border-slate-200 text-slate-700 focus:ring-blue-500'
-                            }`}
-                            placeholder={`Habit name`}
-                          />
-                          {tasks.length > 1 && (
-                            <button
-                              type="button"
-                              id={`btn-remove-habit-${i}`}
-                              onClick={() => removeTaskInSettings(i)}
-                              className={`p-2 rounded-lg transition-colors cursor-pointer ${
-                                darkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-800' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+                      <AnimatePresence initial={false}>
+                        {tasks.map((t, i) => (
+                          <motion.div 
+                            key={`habit-row-${i}`}
+                            layout
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                            className="flex gap-2 items-center text-left"
+                          >
+                            {/* Grip drag handle icon for visual cue */}
+                            <div 
+                              className={`p-1 select-none flex items-center cursor-grab ${
+                                darkMode ? 'text-slate-650' : 'text-slate-350'
                               }`}
-                              title="Delete Habit"
+                              title="Re-order grip"
                             >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                              <GripVertical className="w-4 h-4 shrink-0" />
+                            </div>
+
+                            {/* Up/Down arrows with layout transitions */}
+                            <div className="flex flex-col gap-0.5 shrink-0 select-none">
+                              <button
+                                type="button"
+                                id={`btn-reorder-up-${i}`}
+                                disabled={i === 0}
+                                onClick={() => moveTask(i, 'up')}
+                                className={`p-0.5 rounded transition-all cursor-pointer ${
+                                  i === 0
+                                    ? 'opacity-35 cursor-not-allowed'
+                                    : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
+                                }`}
+                              >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                id={`btn-reorder-down-${i}`}
+                                disabled={i === tasks.length - 1}
+                                onClick={() => moveTask(i, 'down')}
+                                className={`p-0.5 rounded transition-all cursor-pointer ${
+                                  i === tasks.length - 1
+                                    ? 'opacity-35 cursor-not-allowed'
+                                    : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
+                                }`}
+                              >
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <span className={`text-xs font-mono font-bold w-5 text-center ${
+                              darkMode ? 'text-indigo-400' : 'text-slate-400'
+                            }`}>{(i + 1).toString().padStart(2, '0')}</span>
+                            <input
+                              id={`input-habit-${i}`}
+                              value={t}
+                              onChange={(e) => {
+                                const newTasks = [...tasks];
+                                newTasks[i] = e.target.value;
+                                setTasks(newTasks);
+                              }}
+                              className={`flex-1 px-4 py-2.5 border rounded-xl focus:ring-2 focus:bg-white outline-none transition-all text-sm font-semibold ${
+                                darkMode 
+                                  ? 'bg-slate-800/80 border-slate-705 text-slate-100 focus:text-slate-900 focus:ring-cyan-500' 
+                                  : 'bg-slate-50 hover:bg-slate-100/50 border-slate-200 text-slate-700 focus:ring-blue-500'
+                              }`}
+                              placeholder={`Habit name`}
+                            />
+                            {tasks.length > 1 && (
+                              <button
+                                type="button"
+                                id={`btn-remove-habit-${i}`}
+                                onClick={() => removeTaskInSettings(i)}
+                                className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                                  darkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-800' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+                                }`}
+                                title="Delete Habit"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
                     </div>
 
                     {tasks.length < 10 && (
@@ -1275,6 +1499,38 @@ export default function App() {
                         <span className="text-xs font-normal opacity-70">({tasks.length}/10)</span>
                       </button>
                     )}
+
+                    {/* Monthly Goal Setting Option */}
+                    <div className={`p-4 rounded-2xl border mt-6 transition-all ${
+                      darkMode 
+                        ? 'bg-slate-800/40 border-slate-700/60 shadow-[0_0_15px_rgba(99,102,241,0.15)]' 
+                        : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="mb-3">
+                        <span className="font-bold text-xs md:text-sm block">Monthly Completion Target</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">How many total habit check-offs do you aim to complete this month?</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          id="input-monthly-goal"
+                          min="1"
+                          max="999"
+                          value={monthlyGoal}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 0;
+                            setMonthlyGoal(Math.max(1, Math.min(999, val)));
+                          }}
+                          className={`w-28 px-3.5 py-2 border rounded-xl outline-none text-sm font-extrabold text-center transition-all ${
+                            darkMode 
+                              ? 'bg-slate-850 hover:bg-slate-800 border-slate-700 text-cyan-350 focus:ring-cyan-500/50 focus:border-cyan-500' 
+                              : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 focus:ring-blue-500/50 focus:border-blue-500'
+                          }`}
+                        />
+                        <span className="text-xs font-bold text-slate-400">Completions</span>
+                      </div>
+                    </div>
                     
                     <button 
                       id="btn-settings-save"
@@ -1317,6 +1573,91 @@ export default function App() {
                       You've crushed all your routine goals!
                     </p>
                   </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Milestone Unlock Modal */}
+            <AnimatePresence>
+              {activeMilestoneCelebration && (
+                <motion.div 
+                  id="milestone-celebrate-backdrop"
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[110] flex items-center justify-center p-4 cursor-default"
+                  onClick={() => setActiveMilestoneCelebration(null)}
+                >
+                  <motion.div 
+                    id="milestone-celebrate-content"
+                    initial={{ scale: 0.85, y: 30 }} 
+                    animate={{ scale: 1, y: 0 }} 
+                    exit={{ scale: 0.85, y: 30 }}
+                    transition={{ type: "spring", damping: 25, stiffness: 350 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`rounded-[32px] p-6 md:p-8 max-w-sm w-full text-center border relative shadow-2xl overflow-hidden ${
+                      darkMode 
+                        ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-[0_12px_50px_rgba(0,0,0,0.8)] shadow-cyan-950/10' 
+                        : 'bg-white border-slate-100 text-slate-900 shadow-2xl shadow-slate-200/50'
+                    }`}
+                  >
+                    {/* Top sparkling glows */}
+                    <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-emerald-400 via-cyan-400 to-indigo-500 animate-pulse" />
+
+                    <div className="relative mt-2 flex flex-col items-center">
+                      <div className="absolute -top-3 right-4 text-emerald-400 animate-bounce">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+
+                      {/* Floating Reward Badge Badge Display icon */}
+                      <div className={`w-24 h-24 rounded-[32px] mb-6 flex items-center justify-center text-5xl relative border ${
+                        activeMilestoneCelebration.badgeType === 'bronze' ? 'bg-amber-500/10 border-amber-600/30' :
+                        activeMilestoneCelebration.badgeType === 'silver' ? 'bg-slate-400/10 border-slate-400/30' :
+                        activeMilestoneCelebration.badgeType === 'gold' ? 'bg-yellow-500/10 border-yellow-400/30' :
+                        'bg-cyan-500/15 border-cyan-400/30 shadow-[0_0_20px_rgba(34,211,238,0.3)] animate-pulse'
+                      }`}>
+                        <span>{activeMilestoneCelebration.icon}</span>
+                        <div className="absolute -bottom-1 -right-1 p-1 rounded-lg bg-emerald-500 text-white border-2 border-white dark:border-slate-900 text-[10px] font-bold">
+                          ✓
+                        </div>
+                      </div>
+
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-450">
+                        Milestone Unlocked!
+                      </span>
+                      
+                      <h3 className="text-2xl mt-1 font-black leading-tight">
+                        {activeMilestoneCelebration.title}
+                      </h3>
+
+                      <p className={`text-xs font-semibold mt-1 px-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {activeMilestoneCelebration.badgeType.toUpperCase()} TIER ACHIEVEMENT
+                      </p>
+
+                      <div className={`my-5 p-4 rounded-2xl border text-xs leading-relaxed font-semibold text-center ${
+                        darkMode ? 'bg-slate-950/60 border-slate-800/80 text-slate-350 font-medium' : 'bg-slate-50 border-slate-150 text-slate-600'
+                      }`}>
+                        "{activeMilestoneCelebration.description}"
+                      </div>
+
+                      <p className="text-[11px] font-mono font-bold text-indigo-400 animate-pulse">
+                        ⭐ Consistency level up rewarded! ⭐
+                      </p>
+
+                      <button 
+                        type="button"
+                        id="btn-milestone-claim"
+                        onClick={() => setActiveMilestoneCelebration(null)}
+                        className={`w-full mt-6 font-bold py-3.5 rounded-xl transition-all cursor-pointer text-sm border-0 flex items-center justify-center gap-1.5 ${
+                          darkMode 
+                            ? 'bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 text-slate-950 font-black shadow-lg shadow-cyan-500/10 hover:brightness-110 shadow-cyan-300/10' 
+                            : 'bg-slate-850 hover:bg-slate-900 text-white shadow-lg'
+                        }`}
+                      >
+                        <span>Awesome, Keep it up!</span>
+                      </button>
+                    </div>
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>

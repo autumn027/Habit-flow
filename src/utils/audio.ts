@@ -7,8 +7,10 @@
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private volumeLevel: number = 0.35; // Default low, non-intrusive level (0.3 - 0.5)
+  private isMuted: boolean = false;
 
   private initContext() {
+    if (this.isMuted) return null;
     if (!this.ctx) {
       // Establish standard AudioContext compatible with older browsers
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -31,10 +33,65 @@ class AudioEngine {
   }
 
   /**
+   * Set muted status
+   */
+  public setMuted(muted: boolean) {
+    this.isMuted = muted;
+  }
+
+  /**
+   * Get muted status
+   */
+  public getMuted() {
+    return this.isMuted;
+  }
+
+  /**
+   * Synthesizes an upbeat, shiny ascending major chord arpeggio ending on a brilliant flourish
+   * Ideal for level-ups/milestones.
+   */
+  public playLevelUpSound() {
+    if (this.isMuted) return;
+    const ctx = this.initContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      // Energetic level-up arpeggio nodes: C5 (523 Hz), E5 (659 Hz), G5 (784 Hz), C6 (1046 Hz), E6 (1318 Hz)
+      const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+      const spacing = 0.082;
+
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        const startTime = now + (idx * spacing);
+
+        osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        // Exponential decay envelope
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(this.volumeLevel * 0.45, startTime + 0.03);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 0.55);
+
+        osc.start(startTime);
+        osc.stop(startTime + 0.6);
+      });
+    } catch (e) {
+      console.warn("Audio level up sound failure", e);
+    }
+  }
+
+  /**
    * Synthesizes a high-frequency, elastic tactile "pop" sound
    * Ideal for individual task checks.
    */
   public playCheckPop() {
+    if (this.isMuted) return;
     const ctx = this.initContext();
     if (!ctx) return;
 
@@ -68,6 +125,7 @@ class AudioEngine {
    * Celebrates reaching the 100% daily task target.
    */
   public playSuccessChime() {
+    if (this.isMuted) return;
     const ctx = this.initContext();
     if (!ctx) return;
 
@@ -114,6 +172,7 @@ class AudioEngine {
    * Provides negative tactile feedback for unchecking a task.
    */
   public playUncheckBong() {
+    if (this.isMuted) return;
     const ctx = this.initContext();
     if (!ctx) return;
 
