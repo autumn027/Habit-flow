@@ -45,7 +45,10 @@ export default function App() {
   // --- State Management ---
   const [hasStarted, setHasStarted] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(false);
-  const [companionType, setCompanionType] = useState<'auto' | 'white_cat' | 'black_witch_cat' | 'wise_owl'>('auto');
+  const [lightCompanion, setLightCompanion] = useState<'auto' | 'white_cat' | 'black_witch_cat' | 'wise_owl' | 'dog_expedition' | 'mighty_lion'>('auto');
+  const [darkCompanion, setDarkCompanion] = useState<'auto' | 'white_cat' | 'black_witch_cat' | 'wise_owl' | 'dog_expedition' | 'mighty_lion'>('auto');
+  const [syncCompanions, setSyncCompanions] = useState<boolean>(false);
+  const companionType = darkMode ? darkCompanion : lightCompanion;
   
   // Dashboard & UX Customization States
   const [currentView, setCurrentView] = useState<'tracker' | 'dashboard'>('tracker');
@@ -96,6 +99,9 @@ export default function App() {
       history,
       hasStarted,
       companionType,
+      lightCompanion,
+      darkCompanion,
+      syncCompanions,
       monthlyGoal,
       updatedAt: new Date().toISOString()
     };
@@ -161,7 +167,24 @@ export default function App() {
       if (Array.isArray(data.tasks)) setTasks(migrateTasksList(data.tasks));
       if (data.history) setHistory(data.history);
       if (typeof data.hasStarted === 'boolean') setHasStarted(data.hasStarted);
-      if (data.companionType) setCompanionType(data.companionType);
+      if (typeof data.syncCompanions === 'boolean') {
+        setSyncCompanions(data.syncCompanions);
+      }
+      
+      const validCompanions = ['auto', 'white_cat', 'black_witch_cat', 'wise_owl', 'dog_expedition', 'mighty_lion'];
+      
+      if (data.lightCompanion && validCompanions.includes(data.lightCompanion)) {
+        setLightCompanion(data.lightCompanion);
+      } else if (data.companionType && validCompanions.includes(data.companionType)) {
+        setLightCompanion(data.companionType);
+      }
+      
+      if (data.darkCompanion && validCompanions.includes(data.darkCompanion)) {
+        setDarkCompanion(data.darkCompanion);
+      } else if (data.companionType && validCompanions.includes(data.companionType)) {
+        setDarkCompanion(data.companionType);
+      }
+      
       if (typeof data.monthlyGoal === 'number' && data.monthlyGoal > 0) setMonthlyGoal(data.monthlyGoal);
       
       setSyncFeedback({ type: 'success', message: 'Backup successfully loaded! Local state updated.' });
@@ -248,6 +271,9 @@ export default function App() {
           hasStarted: savedStarted, 
           darkMode: savedDarkMode,
           companionType: savedCompanionType,
+          lightCompanion: savedLightCompanion,
+          darkCompanion: savedDarkCompanion,
+          syncCompanions: savedSyncCompanions,
           soundMuted: savedSoundMuted,
           unlockedMilestones: savedUnlocked,
           currentView: savedView,
@@ -265,8 +291,23 @@ export default function App() {
         if (typeof savedDarkMode === 'boolean') {
           setDarkMode(savedDarkMode);
         }
-        if (savedCompanionType && ['auto', 'white_cat', 'black_witch_cat', 'wise_owl'].includes(savedCompanionType)) {
-          setCompanionType(savedCompanionType);
+        
+        if (typeof savedSyncCompanions === 'boolean') {
+          setSyncCompanions(savedSyncCompanions);
+        }
+
+        const validCompanions = ['auto', 'white_cat', 'black_witch_cat', 'wise_owl', 'dog_expedition', 'mighty_lion'];
+
+        if (savedLightCompanion && validCompanions.includes(savedLightCompanion)) {
+          setLightCompanion(savedLightCompanion as any);
+        } else if (savedCompanionType && validCompanions.includes(savedCompanionType)) {
+          setLightCompanion(savedCompanionType as any);
+        }
+
+        if (savedDarkCompanion && validCompanions.includes(savedDarkCompanion)) {
+          setDarkCompanion(savedDarkCompanion as any);
+        } else if (savedCompanionType && validCompanions.includes(savedCompanionType)) {
+          setDarkCompanion(savedCompanionType as any);
         }
         if (typeof savedSoundMuted === 'boolean') {
           setSoundMuted(savedSoundMuted);
@@ -298,12 +339,15 @@ export default function App() {
       hasStarted, 
       darkMode, 
       companionType,
+      lightCompanion,
+      darkCompanion,
+      syncCompanions,
       soundMuted,
       unlockedMilestones,
       currentView,
       monthlyGoal
     }));
-  }, [tasks, history, hasStarted, darkMode, companionType, soundMuted, unlockedMilestones, currentView, monthlyGoal]);
+  }, [tasks, history, hasStarted, darkMode, companionType, lightCompanion, darkCompanion, syncCompanions, soundMuted, unlockedMilestones, currentView, monthlyGoal]);
 
   // Hook state to service
   useEffect(() => {
@@ -1220,7 +1264,9 @@ export default function App() {
                     }`}>
                       <div className="mb-3">
                         <span className="font-bold text-xs md:text-sm block">Focus Companion</span>
-                        <span className="text-[10px] text-slate-400 font-semibold">Choose your daily routine partner</span>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          Choose routine partner (Editing {darkMode ? '🌙 Dark mode pet' : '☀️ Light mode pet'})
+                        </span>
                       </div>
                       
                       <div className="grid grid-cols-2 gap-2">
@@ -1228,14 +1274,25 @@ export default function App() {
                           { id: 'auto', label: 'Auto (Default) ✨' },
                           { id: 'white_cat', label: 'White Cat 🐾' },
                           { id: 'black_witch_cat', label: 'Witch Cat 🔮' },
-                          { id: 'wise_owl', label: 'Wise Owl 🦉' }
+                          { id: 'wise_owl', label: 'Wise Owl 🦉' },
+                          { id: 'dog_expedition', label: 'Explorer Dog 🧭' },
+                          { id: 'mighty_lion', label: 'Royal Lion 👑' }
                         ].map((companion) => (
                           <button
                             key={companion.id}
                             type="button"
                             id={`btn-select-companion-${companion.id}`}
                             onClick={() => {
-                              setCompanionType(companion.id as any);
+                              if (syncCompanions) {
+                                setLightCompanion(companion.id as any);
+                                setDarkCompanion(companion.id as any);
+                              } else {
+                                if (darkMode) {
+                                  setDarkCompanion(companion.id as any);
+                                } else {
+                                  setLightCompanion(companion.id as any);
+                                }
+                              }
                               audioEngine?.playCheckPop?.();
                             }}
                             className={`px-3 py-2 text-xs font-bold rounded-xl border cursor-pointer transition-all ${
@@ -1251,6 +1308,38 @@ export default function App() {
                             {companion.label}
                           </button>
                         ))}
+                      </div>
+
+                      {/* Sync Companions Across Themes Toggle Option */}
+                      <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-200/20">
+                        <div>
+                          <span className="font-bold text-[11px] block">Use same pet for both themes</span>
+                          <span className="text-[9px] text-slate-400 mt-0.5 block">Syncs selection across Light and Dark</span>
+                        </div>
+                        <button
+                          type="button"
+                          id="btn-toggle-sync-companions"
+                          onClick={() => {
+                            const nextSync = !syncCompanions;
+                            setSyncCompanions(nextSync);
+                            if (nextSync) {
+                              const currentSelected = darkMode ? darkCompanion : lightCompanion;
+                              setLightCompanion(currentSelected);
+                              setDarkCompanion(currentSelected);
+                            }
+                            audioEngine?.playCheckPop?.();
+                          }}
+                          aria-label="Use same companion for both themes"
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            syncCompanions ? 'bg-indigo-500' : 'bg-slate-300'
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              syncCompanions ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
                       </div>
                     </div>
 

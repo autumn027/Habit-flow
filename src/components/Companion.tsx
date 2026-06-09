@@ -48,7 +48,7 @@ interface CompanionProps {
   tasksCompleted: number;
   totalTasks: number;
   theme: 'light' | 'dark';
-  companionType?: 'auto' | 'white_cat' | 'black_witch_cat' | 'wise_owl';
+  companionType?: 'auto' | 'white_cat' | 'black_witch_cat' | 'wise_owl' | 'dog_expedition' | 'mighty_lion';
   companionAction?: { type: 'check' | 'uncheck' | 'complete_all'; timestamp: number } | null;
 }
 
@@ -79,11 +79,12 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
   }, [tasksCompleted, totalTasks]);
 
   // Determine active companion resolved from theme and companionType setting
+  // Witch cat is now the default for dark mode, while white cat is the default for light mode
   const resolvedCompanion = useMemo(() => {
     if (companionType && companionType !== 'auto') {
       return companionType;
     }
-    return theme === 'dark' ? 'wise_owl' : 'white_cat';
+    return theme === 'dark' ? 'black_witch_cat' : 'white_cat';
   }, [companionType, theme]);
 
   // Speech bubble text - customized adaptively for different companions
@@ -95,29 +96,47 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
     if (isSleeping) {
       if (resolvedCompanion === 'white_cat') return "mrr... zzz... 😴🐾";
       if (resolvedCompanion === 'black_witch_cat') return "nyan... zzz... 🔮😴";
-      return "h-hoo... zzz... 😴🦉";
+      if (resolvedCompanion === 'wise_owl') return "h-hoo... zzz... 😴🦉";
+      if (resolvedCompanion === 'dog_expedition') return "woof... zzz... ⛺😴🐾";
+      if (resolvedCompanion === 'mighty_lion') return "grrr... zzz... 👑🦁😴";
+      return "zzz... 😴";
     }
     
     if (completionPercentage === 0) {
       if (resolvedCompanion === 'white_cat') return "meow! let's do this! 🐾";
       if (resolvedCompanion === 'black_witch_cat') return "mew! ready to cast some habit-magic? 🔮";
-      return "hoo! ready for tracking! 🦉";
+      if (resolvedCompanion === 'wise_owl') return "hoo! ready for tracking! 🦉";
+      if (resolvedCompanion === 'dog_expedition') return "bark! I'm so excited to spend the day with you, human! ⛺🐾";
+      if (resolvedCompanion === 'mighty_lion') return "roar! let's conquer the day, my subject! 👑🦁";
+      return "let's record our habits! ✨";
     } else if (completionPercentage < 40) {
       if (resolvedCompanion === 'white_cat') return "purr! a great start! 🐱";
       if (resolvedCompanion === 'black_witch_cat') return "a magical beginning! ✨🐱";
-      return "wise start! keep it up! ✨";
+      if (resolvedCompanion === 'wise_owl') return "wise start! keep it up! ✨";
+      if (resolvedCompanion === 'dog_expedition') return "woof! look at my wagging tail! You did the first step! 🐾❤️";
+      if (resolvedCompanion === 'mighty_lion') return "a noble beginning! rule on! 🏆🦁";
+      return "great start! keep it up! 🚀";
     } else if (completionPercentage < 70) {
       if (resolvedCompanion === 'white_cat') return "wow, half done! gorgeous! 💕";
       if (resolvedCompanion === 'black_witch_cat') return "the potion is brewing perfectly! 🧪💜";
-      return "shining progress there! 🌙";
+      if (resolvedCompanion === 'wise_owl') return "shining progress there! 🌙";
+      if (resolvedCompanion === 'dog_expedition') return "pant, pant! you are my absolute hero! halfway done! 🐶❤️";
+      if (resolvedCompanion === 'mighty_lion') return "the kingdom is thriving halfway! 🏰🦁";
+      return "amazing progress, keep moving! 🌟";
     } else if (completionPercentage < 100) {
       if (resolvedCompanion === 'white_cat') return "almost perfectly done! 🌟";
       if (resolvedCompanion === 'black_witch_cat') return "so close to a spellbinding finish! 🌟🧙‍♀️";
-      return "nearly master level! 🔮";
+      if (resolvedCompanion === 'wise_owl') return "nearly master level! 🔮";
+      if (resolvedCompanion === 'dog_expedition') return "bark bark! so close! I'm fetching a huge hug for when you finish! 🥰🐾";
+      if (resolvedCompanion === 'mighty_lion') return "victory is within our claws, mighty warrior! 👑🦁";
+      return "almost there! finish strong! 💪";
     } else {
       if (resolvedCompanion === 'white_cat') return "MEOW-VELOUS! 100% complete! 🏆🎉";
-      if (resolvedCompanion === 'black_witch_cat') return "SPECTACULAR MAGIC! 100% cast! 👑🔮🐱";
-      return "ABSOLUTE WISDOM! you did it! 👑🦉";
+      if (resolvedCompanion === 'black_witch_cat') return "SPECTACULAR MAGIC! 105% cast! 👑🔮🐱";
+      if (resolvedCompanion === 'wise_owl') return "ABSOLUTE WISDOM! you did it! 👑🦉";
+      if (resolvedCompanion === 'dog_expedition') return "WOOF! You completed everything! I love you so much! 🥰❤️🐾";
+      if (resolvedCompanion === 'mighty_lion') return "HAIL THE CONQUEROR! absolute dominance! 👑🦁🏆";
+      return "perfect day! 105% completed! 🎉";
     }
   }, [temporaryPhrase, completionPercentage, resolvedCompanion, isSleeping]);
 
@@ -148,7 +167,7 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
           setTemporaryPhrase(null);
         }, 5000);
 
-        if (resolvedCompanion === 'white_cat' || resolvedCompanion === 'black_witch_cat') {
+        if (resolvedCompanion === 'white_cat' || resolvedCompanion === 'black_witch_cat' || resolvedCompanion === 'dog_expedition' || resolvedCompanion === 'mighty_lion') {
           // Feline Wake-up stretch (scaleX/scaleY springs and elastic hop)
           controls.start({
             scaleX: [1, 1.15, 0.94, 1.05, 1],
@@ -240,6 +259,18 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
           "a masterful daily record! perfect score! 🏆🎓",
           "hoo-ray! you completed every task tonight! 🌌⭐",
           "wisdom is achieved through consistency! 📖👑"
+        ],
+        dog_expedition: [
+          "WOOF! You completed everything! I love you so much! 🥰❤️🐾",
+          "Tail wagging at maximum speed! You are my absolute hero! 🏆🐶",
+          "Bark bark! Belly rubs time! Best owner in the whole wide world! 🎉🐾",
+          "I'm the proudest pup ever! You conquered all your habits today! ❤️🐕"
+        ],
+        mighty_lion: [
+          "HAIL THE CONQUEROR! absolute dominance! 👑🦁🏆",
+          "every corner of the pride lands has been secured! 🏰🦁",
+          "a royal decree! you have conquered every quest! 🌟👑",
+          "pure majesty! a perfect score! 👑🦁✨"
         ]
       };
       const activePhrases = allCompletedPHRASES[resolvedCompanion] || allCompletedPHRASES.white_cat;
@@ -272,6 +303,18 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
           "excellent execution! stay mindful! 🌙📖",
           "progress is the path to wisdom! 💫🦉",
           "one step closer to your goal! 🌲📋"
+        ],
+        dog_expedition: [
+          "woof! I'm so proud of you, master! 🐾❤️",
+          "bark bark! you are doing amazing, my favorite human! 🥰✨",
+          "pant, pant! seeing you succeed makes my tail wag so fast! 🐶🌸",
+          "high-paw! you can do anything, best owner ever! 🐾⭐"
+        ],
+        mighty_lion: [
+          "roar! a mighty check indeed! 👑🦁",
+          "by royal decree: job well done! ⭐🦁",
+          "ruling over your habits, marvelous! 🏆🦁",
+          "noble step forward, my mighty warrior! 👑🦁"
         ]
       };
       const activePhrases = checkPHRASES[resolvedCompanion] || checkPHRASES.white_cat;
@@ -342,14 +385,14 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
 
     const runTwitch = () => {
       if (!isSleeping && !isDancing) {
-        if (resolvedCompanion === 'white_cat' || resolvedCompanion === 'black_witch_cat') {
-          // Twitch cat head
+        if (resolvedCompanion === 'white_cat' || resolvedCompanion === 'black_witch_cat' || resolvedCompanion === 'dog_expedition') {
+          // Twitch cat/dog head
           twitchControls.start({
             rotate: [0, -10, 8, 0],
             transition: { duration: 0.38, ease: "easeInOut" }
           });
         } else {
-          // Tilt owl head
+          // Tilt owl/lion head
           twitchControls.start({
             rotate: [0, 12, -8, 0],
             transition: { duration: 0.42, ease: "easeInOut" }
@@ -818,6 +861,282 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
                 {/* Forepaws */}
                 <ellipse cx="44" cy="80" rx="3.5" ry="4" fill="#121214" stroke="#1A1A1E" strokeWidth="0.5" />
                 <ellipse cx="56" cy="80" rx="3.5" ry="4" fill="#121214" stroke="#1A1A1E" strokeWidth="0.5" />
+              </svg>
+            </motion.div>
+          ) : resolvedCompanion === 'dog_expedition' ? (
+            /* --- Dog Expedition Asset (White with spots, brown eyes, explorers cap) --- */
+            <motion.div
+              key="dog_expedition_asset"
+              initial={{ opacity: 0, scale: 0.82, rotate: -8 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0.82, rotate: 8 }}
+              transition={{ duration: 0.28, ease: "easeInOut" }}
+              className="absolute inset-0 w-full h-full"
+            >
+              <svg 
+                viewBox="0 0 100 100" 
+                className="w-full h-full drop-shadow-[0_4px_8px_rgba(0,0,0,0.12)]"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                {/* Dog Tail: white with a black spot */}
+                <motion.path 
+                  d="M 68,76 C 75,76 84,70 82,56 C 81,48 76,46 76,52" 
+                  fill="none" 
+                  stroke="#F8FAFC" 
+                  strokeWidth="6" 
+                  strokeLinecap="round"
+                  animate={{ 
+                    rotate: isSleeping ? [0, 2, -2, 0] : isDancing ? [0, 30, -30, 0] : [0, 12, -8, 12, -4, 0] 
+                  }}
+                  transition={{ 
+                    repeat: Infinity, 
+                    duration: isSleeping ? 5.0 : isDancing ? 0.6 : 2.8, 
+                    ease: "easeInOut" 
+                  }}
+                />
+                
+                {/* Back Paws */}
+                <circle cx="34" cy="85" r="7.5" fill="#E2E8F0" />
+                <circle cx="66" cy="85" r="7.5" fill="#E2E8F0" />
+
+                {/* Dog Main Body: White with black spots */}
+                <motion.ellipse 
+                  cx="50" cy="72" rx="24" ry="17" fill="#F8FAFC" 
+                  animate={isSleeping ? { scaleY: [1, 1.04, 1] } : { scaleY: [1, 1.02, 1] }}
+                  style={{ originY: 0.95 }}
+                  transition={{ repeat: Infinity, duration: isSleeping ? 4.5 : 3.2, ease: "easeInOut" }}
+                />
+                {/* Spots on body */}
+                <circle cx="40" cy="68" r="5" fill="#1E293B" />
+                <circle cx="58" cy="75" r="4.5" fill="#1E293B" />
+                <circle cx="48" cy="78" r="3.5" fill="#1E293B" />
+
+                {/* Head context */}
+                <motion.g
+                  animate={isSleeping ? { y: [0, 1.2, 0] } : { y: [0, 0.6, 0] }}
+                  transition={{ repeat: Infinity, duration: isSleeping ? 4.5 : 3.2, ease: "easeInOut" }}
+                >
+                  <motion.g animate={twitchControls} style={{ transformOrigin: "50px 46px" }}>
+                    {/* Floppy Ears */}
+                    {/* Left Floppy Ear */}
+                    <path d="M 22,34 C 14,34 16,56 22,56 C 26,56 28,42 22,34" fill="#1E293B" stroke="#0F172A" strokeWidth="0.5" />
+                    {/* Right Floppy Ear */}
+                    <path d="M 78,34 C 86,34 84,56 78,56 C 74,56 72,42 78,34" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="0.5" />
+                    <circle cx="79" cy="44" r="3" fill="#1E293B" />
+
+                    {/* Dog Head Base */}
+                    <ellipse cx="50" cy="46" rx="22" ry="19" fill="#FFF" stroke="#F1F5F9" strokeWidth="0.5" />
+                    {/* Black spot around left eye */}
+                    <ellipse cx="40" cy="44" rx="8" ry="9" fill="#1E293B" />
+
+                    {/* Cute rosy blush */}
+                    <circle cx="33" cy="51" r="3.2" fill="#FFB5A7" opacity={isSleeping ? 0.25 : 0.45} />
+                    <circle cx="67" cy="51" r="3.2" fill="#FFB5A7" opacity={isSleeping ? 0.25 : 0.45} />
+
+                    {/* Eye Layer - Brown eyes */}
+                    {(isSleeping || isBlinking) ? (
+                      <g>
+                        <path d="M 33,44 Q 38,48 43,44" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M 57,44 Q 62,48 67,44" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" />
+                      </g>
+                    ) : (
+                      <>
+                        {/* Sclera/Iris */}
+                        <circle cx="38" cy="44" r="4.5" fill="#78350F" stroke="#451A03" strokeWidth="0.5" />
+                        <circle cx="62" cy="44" r="4.5" fill="#78350F" stroke="#451A03" strokeWidth="0.5" />
+
+                        {/* Pupils */}
+                        <motion.g style={{ x: eyeOffset.x, y: eyeOffset.y }}>
+                          <circle cx="38" cy="44" r="2.5" fill="#1E293B" />
+                          <circle cx="37" cy="43" r="0.8" fill="#FFFFFF" />
+                          <circle cx="62" cy="44" r="2.5" fill="#1E293B" />
+                          <circle cx="61" cy="43" r="0.8" fill="#FFFFFF" />
+                        </motion.g>
+                      </>
+                    )}
+
+                    {/* Snout with nose */}
+                    <ellipse cx="50" cy="52" rx="6.5" ry="5.5" fill="#FFFBF5" stroke="#E2E8F0" strokeWidth="0.5" />
+                    <ellipse cx="50" cy="49" rx="3" ry="2" fill="#0F172A" />
+
+                    {/* Mouth */}
+                    {completionPercentage === 100 ? (
+                      /* Happy tongue hanging out! */
+                      <g>
+                        <path d="M 48,52 Q 50,56 52,52" fill="none" stroke="#64748B" strokeWidth="1.5" />
+                        <path d="M 48.5,52.5 C 48.5,56.5 51.5,56.5 51.5,52.5 Z" fill="#F43F5E" />
+                      </g>
+                    ) : (
+                      <path d="M 47,52 Q 50,54.5 53,52" fill="none" stroke="#64748B" strokeWidth="1.5" strokeLinecap="round" />
+                    )}
+
+                    {/* Expedition Cap / Explorers Cap on dog's head */}
+                    <g id="expedition-cap" className="origin-[50px_27px]">
+                      {/* Dome shape of the khaki / olive army/explorer cap */}
+                      <path 
+                        d="M 34,28 C 34,14 40,8 50,8 C 60,8 66,14 66,28 Z" 
+                        fill="#15803D"
+                        stroke="#166534"
+                        strokeWidth="0.7"
+                      />
+                      {/* Cap visor/brim sticking forward */}
+                      <ellipse 
+                        cx="50" cy="27" rx="18" ry="3.5" 
+                        fill="#166534" 
+                        stroke="#14532D" 
+                        strokeWidth="0.7" 
+                      />
+                      {/* Explorer Compass Emblem Pin or badge on cap */}
+                      <circle cx="50" cy="18" r="3.5" fill="#FCD34D" stroke="#D97706" strokeWidth="0.5" />
+                      <line x1="50" y1="16" x2="50" y2="20" stroke="#EF4444" strokeWidth="0.6" />
+                      <line x1="48" y1="18" x2="52" y2="18" stroke="#EF4444" strokeWidth="0.6" />
+                    </g>
+                  </motion.g>
+                </motion.g>
+
+                {/* Forepaws */}
+                <ellipse cx="44" cy="81" rx="3.5" ry="4" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="0.5" />
+                <ellipse cx="56" cy="81" rx="3.5" ry="4" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="0.5" />
+              </svg>
+            </motion.div>
+          ) : resolvedCompanion === 'mighty_lion' ? (
+            /* --- Mighty Lion Asset (Kings Crown, Orange Mane, Majestic Smile) --- */
+            <motion.div
+              key="mighty_lion_asset"
+              initial={{ opacity: 0, scale: 0.82, rotate: -8 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0.82, rotate: 8 }}
+              transition={{ duration: 0.28, ease: "easeInOut" }}
+              className="absolute inset-0 w-full h-full"
+            >
+              <svg 
+                viewBox="0 0 100 100" 
+                className="w-full h-full drop-shadow-[0_4px_10px_rgba(0,0,0,0.18)]"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                {/* Tail with fluffy tip */}
+                <motion.path 
+                  d="M 68,76 C 78,76 85,73 83,52 Q 82,42 86,40" 
+                  fill="none" 
+                  stroke="#F59E0B" 
+                  strokeWidth="4" 
+                  strokeLinecap="round"
+                  animate={{ 
+                    rotate: isSleeping ? [0, 2, -2, 0] : isDancing ? [0, 30, -30, 0] : [0, 15, -10, 15, -4, 0] 
+                  }}
+                  transition={{ 
+                    repeat: Infinity, 
+                    duration: isSleeping ? 5.0 : isDancing ? 0.6 : 2.8, 
+                    ease: "easeInOut" 
+                  }}
+                />
+                {/* Fluffy tail tip brown */}
+                <circle cx="86" cy="40" r="4.5" fill="#78350F" />
+
+                {/* Back Paws */}
+                <circle cx="34" cy="85" r="7.5" fill="#D97706" />
+                <circle cx="66" cy="85" r="7.5" fill="#D97706" />
+
+                {/* Lion Main Body with breathing */}
+                <motion.ellipse 
+                  cx="50" cy="72" rx="24" ry="17" fill="#F59E0B" 
+                  animate={isSleeping ? { scaleY: [1, 1.04, 1] } : { scaleY: [1, 1.02, 1] }}
+                  style={{ originY: 0.95 }}
+                  transition={{ repeat: Infinity, duration: isSleeping ? 4.5 : 3.2, ease: "easeInOut" }}
+                />
+                {/* Royal light underbelly */}
+                <motion.ellipse 
+                  cx="50" cy="73" rx="14" ry="10" fill="#FCD34D" 
+                  animate={isSleeping ? { scaleY: [1, 1.04, 1] } : { scaleY: [1, 1.02, 1] }}
+                  style={{ originY: 0.95 }}
+                  transition={{ repeat: Infinity, duration: isSleeping ? 4.5 : 3.2, ease: "easeInOut" }}
+                />
+
+                <motion.g
+                  animate={isSleeping ? { y: [0, 1.2, 0] } : { y: [0, 0.6, 0] }}
+                  transition={{ repeat: Infinity, duration: isSleeping ? 4.5 : 3.2, ease: "easeInOut" }}
+                >
+                  <motion.g animate={twitchControls} style={{ transformOrigin: "50px 46px" }}>
+                    {/* Majestic Fluffy Orange Mane */}
+                    <g id="lion-mane">
+                      <circle cx="50" cy="23" r="14" fill="#EA580C" />
+                      <circle cx="34" cy="30" r="14" fill="#EA580C" />
+                      <circle cx="66" cy="30" r="14" fill="#EA580C" />
+                      <circle cx="28" cy="46" r="14" fill="#EA580C" />
+                      <circle cx="72" cy="46" r="14" fill="#EA580C" />
+                      <circle cx="36" cy="62" r="14" fill="#EA580C" />
+                      <circle cx="64" cy="62" r="14" fill="#EA580C" />
+                      <circle cx="50" cy="67" r="13" fill="#EA580C" />
+                    </g>
+
+                    {/* Rounded Ears sticking out of the mane */}
+                    <circle cx="34" cy="28" r="6" fill="#F59E0B" stroke="#D97706" strokeWidth="0.5" />
+                    <circle cx="34" cy="28" r="3.5" fill="#FEF08A" />
+                    <circle cx="66" cy="28" r="6" fill="#F59E0B" stroke="#D97706" strokeWidth="0.5" />
+                    <circle cx="66" cy="28" r="3.5" fill="#FEF08A" />
+
+                    {/* Lion Head Circle */}
+                    <circle cx="50" cy="46" r="18" fill="#F59E0B" stroke="#D97706" strokeWidth="0.5" />
+
+                    {/* Rosy blush */}
+                    <circle cx="36" cy="50" r="3" fill="#FCA5A5" opacity={isSleeping ? 0.2 : 0.45} />
+                    <circle cx="64" cy="50" r="3" fill="#FCA5A5" opacity={isSleeping ? 0.2 : 0.45} />
+
+                    {/* Brave Eyes */}
+                    {(isSleeping || isBlinking) ? (
+                      <g>
+                        <path d="M 34,44 Q 38,47 42,44" fill="none" stroke="#451A03" strokeWidth="2.5" strokeLinecap="round" />
+                        <path d="M 58,44 Q 62,47 66,44" fill="none" stroke="#451A03" strokeWidth="2.5" strokeLinecap="round" />
+                      </g>
+                    ) : (
+                      <>
+                        <circle cx="38" cy="43" r="4" fill="#FFFFFF" stroke="#451A03" strokeWidth="0.5" />
+                        <circle cx="62" cy="43" r="4" fill="#FFFFFF" stroke="#451A03" strokeWidth="0.5" />
+
+                        {/* Pupils with tracking */}
+                        <motion.g style={{ x: eyeOffset.x, y: eyeOffset.y }}>
+                          <circle cx="38" cy="43" r="2.5" fill="#451A03" />
+                          <circle cx="37" cy="42" r="0.8" fill="#FFFFFF" />
+                          <circle cx="62" cy="43" r="2.5" fill="#451A03" />
+                          <circle cx="61" cy="42" r="0.8" fill="#FFFFFF" />
+                        </motion.g>
+                      </>
+                    )}
+
+                    {/* Royal snout with proud black nose */}
+                    <ellipse cx="50" cy="50" rx="4.5" ry="3.5" fill="#FEF08A" />
+                    <polygon points="47,48 53,48 50,51.5" fill="#1E293B" />
+
+                    {/* Brave regal mouth */}
+                    <path d="M 46,52 Q 50,55 54,52" fill="none" stroke="#451A03" strokeWidth="1.6" strokeLinecap="round" />
+
+                    {/* Kings Crown on lion's head */}
+                    <g id="kings-crown" className="origin-[50px_24px]">
+                      {/* Crown base band */}
+                      <path d="M 36,24 L 64,24 L 62,28 L 38,28 Z" fill="#FBBF24" stroke="#B45309" strokeWidth="0.8" />
+                      {/* Five golden crown peaks with jewels on top */}
+                      <polygon points="36,24 38,12 43,20 50,8 57,20 62,12 64,24" fill="#FBBF24" stroke="#B45309" strokeWidth="0.8" />
+                      
+                      {/* Red velvet cap underlay */}
+                      <path d="M 38,24 C 38,18 43,14 50,14 C 57,14 62,18 62,24 Z" fill="#DC2626" opacity="0.85" />
+                      <polygon points="36,24 38,12 43,20 50,8 57,20 62,12 64,24" fill="none" stroke="#B45309" strokeWidth="0.8" />
+
+                      {/* Small royal jewels */}
+                      <circle cx="38" cy="12" r="1.5" fill="#EF4444" />
+                      <circle cx="50" cy="8" r="1.8" fill="#3B82F6" />
+                      <circle cx="62" cy="12" r="1.5" fill="#EF4444" />
+                      
+                      {/* Crown band gemstones */}
+                      <circle cx="44" cy="26" r="1" fill="#10B981" />
+                      <circle cx="50" cy="26" r="1" fill="#EF4444" />
+                      <circle cx="56" cy="26" r="1" fill="#10B981" />
+                    </g>
+                  </motion.g>
+                </motion.g>
+
+                {/* Forepaws */}
+                <ellipse cx="44" cy="81" rx="3.5" ry="4" fill="#F59E0B" stroke="#D97706" strokeWidth="0.5" />
+                <ellipse cx="56" cy="81" rx="3.5" ry="4" fill="#F59E0B" stroke="#D97706" strokeWidth="0.5" />
               </svg>
             </motion.div>
           ) : (
