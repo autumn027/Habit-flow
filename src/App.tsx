@@ -692,81 +692,6 @@ export default function App() {
                       <User className="w-4 h-4 text-indigo-400" />
                       <span className="hidden sm:inline">About Dev</span>
                     </button>
-
-                    <AnimatePresence>
-                      {showDevInfo && (
-                        <>
-                          {/* Backdrop to close the popup */}
-                          <div 
-                            className="fixed inset-0 z-40 cursor-default" 
-                            onClick={() => setShowDevInfo(false)} 
-                          />
-                          
-                          <motion.div
-                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                            transition={{ duration: 0.2 }}
-                            className={`absolute right-0 mt-3 w-85 rounded-3xl p-5 border z-50 shadow-2xl transition-all duration-300 ${
-                              darkMode 
-                                ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.6)]' 
-                                : 'bg-white border-slate-100 text-slate-900 shadow-[0_12px_40px_rgba(148,163,184,0.18)]'
-                            }`}
-                          >
-                            <div className="flex justify-between items-start mb-4">
-                              <h4 className="font-extrabold text-[11px] uppercase tracking-wider text-indigo-400">Developer Profile</h4>
-                              <button 
-                                onClick={() => setShowDevInfo(false)}
-                                className={`text-slate-400 hover:text-slate-350 transition-colors cursor-pointer`}
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                            
-                            <div className="flex items-center gap-3.5 mb-4">
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border font-black text-base select-none shadow-sm ${
-                                darkMode ? 'bg-indigo-950/60 border-indigo-800 text-indigo-350 overflow-hidden' : 'bg-indigo-50 border-indigo-100 text-indigo-600'
-                              }`}>
-                                AS
-                              </div>
-                              <div className="flex-1">
-                                <h3 id="dev-name" className="font-extrabold text-base leading-tight">Aditya Shrivastava</h3>
-                                <p className={`text-[11px] font-semibold flex items-center gap-1 mt-0.5 ${
-                                  darkMode ? 'text-indigo-400' : 'text-slate-500'
-                                }`}>
-                                  <GraduationCap className="w-3.5 h-3.5" />
-                                  <span>Student Innovator</span>
-                                </p>
-                              </div>
-                            </div>
-                            
-                            <p id="dev-description" className={`text-xs leading-relaxed mb-4 font-medium p-3.5 rounded-2xl border ${
-                              darkMode 
-                                ? 'bg-slate-950/50 border-slate-800 text-slate-300' 
-                                : 'bg-slate-50 border-slate-100 text-slate-600'
-                            }`}>
-                              Student of BITS Pilani and IIT, Madras, designing modern software experiences.
-                            </p>
-                            
-                            <a 
-                              id="dev-linkedin-link"
-                              href="https://www.linkedin.com/in/aditya-s-96905b373/"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`w-full py-3 px-4 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm ${
-                                darkMode 
-                                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/15' 
-                                  : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700'
-                              }`}
-                            >
-                              <Linkedin className="w-4 h-4 shrink-0 fill-current" />
-                              <span>Connect on LinkedIn</span>
-                              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                            </a>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
                   </div>
 
                   <button 
@@ -1662,6 +1587,134 @@ export default function App() {
               )}
             </AnimatePresence>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* About Dev Dropdown Modal - Portal-style viewport layout to ensure full screen interaction boundaries on mobile */}
+      <AnimatePresence>
+        {showDevInfo && (
+          <>
+            {/* Backdrop layer to close modal */}
+            <div 
+              className="fixed inset-0 z-[60] bg-slate-950/45 backdrop-blur-xs cursor-default" 
+              onClick={() => setShowDevInfo(false)} 
+            />
+            
+            <motion.div
+              id="dev-profile-modal"
+              initial={{ opacity: 0, y: 15, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 15, scale: 0.96 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className={`fixed top-24 right-4 sm:right-8 md:right-12 z-[70] w-[calc(100vw-2rem)] sm:w-85 rounded-3xl p-5 border shadow-2xl backdrop-blur-md transition-all duration-300 ${
+                darkMode 
+                  ? 'bg-slate-900/80 border-white/15 text-slate-100 shadow-[0_12px_45px_rgba(0,0,0,0.6)]' 
+                  : 'bg-white/85 border-slate-200/60 text-slate-900 shadow-[0_12px_45px_rgba(148,163,184,0.18)]'
+              }`}
+            >
+              <div className="flex justify-between items-start mb-4">
+                <h4 className={`font-extrabold text-[10px] uppercase tracking-widest ${
+                  darkMode ? 'text-indigo-350' : 'text-indigo-600'
+                }`}>Developer Profile</h4>
+                <button 
+                  onClick={() => setShowDevInfo(false)}
+                  className={`transition-colors cursor-pointer ${
+                    darkMode ? 'text-slate-400 hover:text-indigo-300' : 'text-slate-500 hover:text-indigo-600'
+                  }`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-3.5 mb-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border font-black text-base select-none shadow-sm transition-transform duration-300 hover:rotate-3 ${
+                  darkMode 
+                    ? 'bg-indigo-950/40 border-indigo-500/20 text-indigo-300 overflow-hidden' 
+                    : 'bg-indigo-50/50 border-indigo-200/60 text-indigo-600'
+                }`}>
+                  AS
+                </div>
+                <div className="flex-1">
+                  <h3 id="dev-name" className="font-black text-base tracking-tight leading-tight">Aditya Shrivastava</h3>
+                  <p className={`text-[10px] font-extrabold uppercase tracking-widest flex items-center gap-1.5 mt-1 ${
+                    darkMode ? 'text-indigo-350' : 'text-slate-500/90'
+                  }`}>
+                    <GraduationCap className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Student Innovator</span>
+                  </p>
+                </div>
+              </div>
+              
+              <p id="dev-description" className={`text-xs leading-relaxed mb-4 font-medium p-3.5 rounded-2xl border ${
+                darkMode 
+                  ? 'bg-slate-950/40 border-slate-800/40 text-slate-300' 
+                  : 'bg-slate-50/60 border-slate-100 text-slate-600'
+              }`}>
+                Dual-degree student at <span className={`font-extrabold ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>BITS Pilani</span> & <span className={`font-extrabold ${darkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>IIT Madras</span>. As a focused product engineer, I specialize in building minimalist, high-performance interfaces and intelligent digital tools.
+              </p>
+
+              {/* Skills Bar Section */}
+              <div className="mb-4" id="dev-skills-section">
+                <h5 className="font-extrabold text-[10px] uppercase tracking-widest text-slate-400/80 mb-2.5">Skills</h5>
+                <div className="flex flex-wrap gap-2">
+                  {/* Applied AI */}
+                  <div 
+                    id="badge-applied-ai"
+                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wide border cursor-default transition-all duration-300 flex items-center gap-1.5 hover:scale-[1.03] ${
+                      darkMode 
+                        ? 'bg-blue-500/10 text-blue-300 border-blue-500/20 hover:bg-blue-500/20 hover:shadow-[0_0_12px_rgba(59,130,246,0.5)] hover:border-blue-500/40' 
+                        : 'bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100 hover:shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                    Applied AI
+                  </div>
+
+                  {/* Python */}
+                  <div 
+                    id="badge-python"
+                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wide border cursor-default transition-all duration-300 flex items-center gap-1.5 hover:scale-[1.03] ${
+                      darkMode 
+                        ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20 hover:shadow-[0_0_12px_rgba(16,185,129,0.5)] hover:border-emerald-500/40' 
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 hover:shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Python
+                  </div>
+
+                  {/* Vibecoding */}
+                  <div 
+                    id="badge-vibecoding"
+                    className={`px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wide border cursor-default transition-all duration-300 flex items-center gap-1.5 hover:scale-[1.03] ${
+                      darkMode 
+                        ? 'bg-purple-500/10 text-purple-300 border-purple-500/20 hover:bg-purple-500/20 hover:shadow-[0_0_12px_rgba(168,85,247,0.5)] hover:border-purple-500/40' 
+                        : 'bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-100 hover:shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                    Vibecoding
+                  </div>
+                </div>
+              </div>
+              
+              <a 
+                id="dev-linkedin-link"
+                href="https://www.linkedin.com/in/aditya-s-96905b373/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`w-full py-3 px-4 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transform hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 shadow-sm ${
+                  darkMode 
+                    ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/15 hover:shadow-indigo-500/30' 
+                    : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-700'
+                }`}
+              >
+                <Linkedin className="w-4 h-4 shrink-0 fill-current" />
+                <span>Connect on LinkedIn</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+              </a>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>
