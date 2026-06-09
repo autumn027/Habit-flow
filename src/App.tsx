@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronLeft, 
@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-import { HabitHistory } from './types';
+import { HabitHistory, HabitTask } from './types';
 import { formatDate, getDaysInMonth, getFirstDayOfMonth } from './utils/dateHelpers';
 import { audioEngine } from './utils/audio';
 import Companion from './components/Companion';
@@ -54,11 +54,11 @@ export default function App() {
   const [unlockedMilestones, setUnlockedMilestones] = useState<string[]>([]);
   const [activeMilestoneCelebration, setActiveMilestoneCelebration] = useState<Milestone | null>(null);
 
-  // Start with 3 tasks for 1st use, as requested
-  const [tasks, setTasks] = useState<string[]>([
-    "Morning Meditation", 
-    "Drink 2L Water", 
-    "Exercise 30 mins"
+  // Start with 3 tasks for 1st use, as requested, utilizing new HabitTask structures
+  const [tasks, setTasks] = useState<HabitTask[]>([
+    { name: "Morning Meditation", type: "evergreen" }, 
+    { name: "Drink 2L Water", type: "evergreen" }, 
+    { name: "Exercise 30 mins", type: "evergreen" }
   ]);
   
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
@@ -88,35 +88,6 @@ export default function App() {
     };
   }, []);
 
-  // --- Auto Today Date Sync on Website Clicks ---
-  useEffect(() => {
-    const handleWebClick = (e: MouseEvent) => {
-      const isCalendarInteracting = (e.target as HTMLElement).closest('[id^="btn-date-"], #btn-prev-month, #btn-next-month');
-      
-      if (!isCalendarInteracting) {
-        const todayStr = formatDate(new Date());
-        
-        setSelectedDate((prevSelected) => {
-          if (prevSelected !== todayStr) {
-            return todayStr;
-          }
-          return prevSelected;
-        });
-
-        setViewDate((prevView) => {
-          const today = new Date();
-          if (prevView.getMonth() !== today.getMonth() || prevView.getFullYear() !== today.getFullYear()) {
-            return today;
-          }
-          return prevView;
-        });
-      }
-    };
-    
-    window.addEventListener('click', handleWebClick);
-    return () => window.removeEventListener('click', handleWebClick);
-  }, []);
-
   // Manual Backup Action
   const handleCloudBackup = async () => {
     setSyncFeedback({ type: 'info', message: 'Saving tasks and progress to Google Drive...' });
@@ -138,6 +109,45 @@ export default function App() {
     setTimeout(() => setSyncFeedback(null), 5000);
   };
 
+  // --- Migration and Visibility Helpers ---
+  const migrateTasksList = (list: any[]): HabitTask[] => {
+    if (!list || !Array.isArray(list)) return [];
+    return list.map((t) => {
+      if (typeof t === 'string') {
+        return { name: t, type: 'evergreen' };
+      }
+      return {
+        name: t.name || 'Unnamed Habit',
+        type: t.type || 'evergreen',
+        endDate: t.endDate
+      };
+    });
+  };
+
+  const getVisibleTasksForDate = useCallback((dateStr: string) => {
+    return tasks.map((task, originalIndex) => ({ ...task, originalIndex }))
+      .filter(({ type, endDate, originalIndex }) => {
+        if (type === 'evergreen') return true;
+        
+        if (endDate && dateStr > endDate) {
+          return false;
+        }
+        
+        if (type === 'target_quest') {
+          const completionDate = Object.keys(history).find(d => history[d]?.includes(originalIndex));
+          if (completionDate) {
+            return dateStr === completionDate;
+          }
+        }
+        
+        return true;
+      });
+  }, [tasks, history]);
+
+  const visibleTasksForSelectedDate = useMemo(() => {
+    return getVisibleTasksForDate(selectedDate);
+  }, [selectedDate, getVisibleTasksForDate]);
+
   // Manual Restore Action
   const handleCloudRestore = async () => {
     const confirmRestore = window.confirm(
@@ -148,7 +158,7 @@ export default function App() {
     setSyncFeedback({ type: 'info', message: 'Fetching file from Google Drive...' });
     const data = await googleDriveService.loadFromDrive();
     if (data) {
-      if (Array.isArray(data.tasks)) setTasks(data.tasks);
+      if (Array.isArray(data.tasks)) setTasks(migrateTasksList(data.tasks));
       if (data.history) setHistory(data.history);
       if (typeof data.hasStarted === 'boolean') setHasStarted(data.hasStarted);
       if (data.companionType) setCompanionType(data.companionType);
@@ -182,18 +192,32 @@ export default function App() {
 
   // --- Daily Completion Percentage for Shih Tzu Happiness ---
   const currentDateCompletionPercentage = useMemo(() => {
-    if (!tasks || tasks.length === 0) return 0;
+    const visibleCount = visibleTasksForSelectedDate.length;
+    if (visibleCount === 0) return 100;
     const currentDayHistory = history[selectedDate] || [];
-    return Math.round((currentDayHistory.length / tasks.length) * 100);
-  }, [history, selectedDate, tasks]);
+    const visibleCompletions = currentDayHistory.filter(idx => 
+      visibleTasksForSelectedDate.some(vt => vt.originalIndex === idx)
+    );
+    return Math.min(100, Math.round((visibleCompletions.length / visibleCount) * 100));
+  }, [history, selectedDate, visibleTasksForSelectedDate]);
 
   // --- Streaks Calculator ---
   const currentStreak = useMemo(() => {
     let streakCount = 0;
     const checkDate = new Date();
     const todayStr = formatDate(checkDate);
-    const todayHistory = history[todayStr] || [];
-    const isTodayComplete = tasks.length > 0 && todayHistory.length === tasks.length;
+    
+    const isDayComplete = (dateStr: string) => {
+      const visibleTasks = getVisibleTasksForDate(dateStr);
+      if (visibleTasks.length === 0) return false;
+      const dayHistory = history[dateStr] || [];
+      const completedVisible = dayHistory.filter(idx => 
+        visibleTasks.some(vt => vt.originalIndex === idx)
+      );
+      return completedVisible.length === visibleTasks.length;
+    };
+
+    const isTodayComplete = isDayComplete(todayStr);
 
     // Start checking backwards
     let currentCheck = new Date();
@@ -203,8 +227,7 @@ export default function App() {
 
     while (true) {
       const checkStr = formatDate(currentCheck);
-      const dayHistory = history[checkStr] || [];
-      if (tasks.length > 0 && dayHistory.length === tasks.length) {
+      if (isDayComplete(checkStr)) {
         streakCount++;
         currentCheck.setDate(currentCheck.getDate() - 1);
       } else {
@@ -212,7 +235,7 @@ export default function App() {
       }
     }
     return streakCount;
-  }, [history, tasks.length]);
+  }, [history, getVisibleTasksForDate]);
 
   // --- Local Storage Logic ---
   useEffect(() => {
@@ -231,7 +254,7 @@ export default function App() {
           monthlyGoal: savedMonthlyGoal
         } = JSON.parse(savedData);
         if (Array.isArray(savedTasks) && savedTasks.length >= 1 && savedTasks.length <= 10) {
-          setTasks(savedTasks);
+          setTasks(migrateTasksList(savedTasks));
         }
         if (savedHistory && typeof savedHistory === 'object') {
           setHistory(savedHistory);
@@ -256,7 +279,7 @@ export default function App() {
           setUnlockedMilestones(savedUnlocked);
         } else if (savedHistory) {
           // Fallback check to avoid empty unlock lists if user has records
-          const stats = calculateStatsAndMilestones(savedHistory, (savedTasks || tasks).length);
+          const stats = calculateStatsAndMilestones(savedHistory, migrateTasksList(savedTasks || tasks));
           setUnlockedMilestones(stats.unlockedList);
         }
         if (savedView === 'tracker' || savedView === 'dashboard') {
@@ -291,7 +314,7 @@ export default function App() {
   const checkMilestoneUnlocks = (currentHistory: HabitHistory) => {
     // Only check if we are in started view to avoid popups on startup load
     if (!hasStarted) return;
-    const stats = calculateStatsAndMilestones(currentHistory, tasks.length);
+    const stats = calculateStatsAndMilestones(currentHistory, tasks);
     const newUnlocked = stats.unlockedList;
     
     // Find if there is any milestone in newUnlocked that is not in the existing unlockedMilestones
@@ -340,9 +363,15 @@ export default function App() {
       audioEngine.playUncheckBong();
     }
 
+    const visibleCount = visibleTasksForSelectedDate.length;
+    const visibleCompletions = newDayHistory.filter(idx => 
+      visibleTasksForSelectedDate.some(vt => vt.originalIndex === idx)
+    );
+    const isAllVisibleCompleted = visibleCount > 0 && visibleCompletions.length === visibleCount;
+
     // Companion dialogue trigger
     if (isChecking) {
-      if (newDayHistory.length === tasks.length && tasks.length > 0) {
+      if (isAllVisibleCompleted) {
         setCompanionAction({ type: 'complete_all', timestamp: Date.now() });
       } else {
         setCompanionAction({ type: 'check', timestamp: Date.now() });
@@ -352,7 +381,7 @@ export default function App() {
     }
 
     // Celebration Trigger: If all current tasks are completed
-    if (newDayHistory.length === tasks.length && tasks.length > 0) {
+    if (isChecking && isAllVisibleCompleted) {
       audioEngine.playSuccessChime();
       triggerCelebration();
     }
@@ -430,7 +459,7 @@ export default function App() {
 
   const addTaskInSettings = () => {
     if (tasks.length >= 10) return;
-    setTasks([...tasks, `New Habit ${tasks.length + 1}`]);
+    setTasks([...tasks, { name: `New Habit ${tasks.length + 1}`, type: "evergreen" }]);
   };
 
   // --- Calendar Month Navigation ---
@@ -812,27 +841,43 @@ export default function App() {
                         {viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                       </span>
                     </h2>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-2">
                       <button 
-                        id="btn-prev-month"
-                        onClick={handlePrevMonth} 
-                        className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                          darkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'
+                        onClick={() => {
+                          const today = new Date();
+                          setSelectedDate(formatDate(today));
+                          setViewDate(today);
+                        }}
+                        className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-all border cursor-pointer ${
+                          darkMode 
+                            ? 'bg-slate-800/80 border-slate-700 text-indigo-300 hover:text-indigo-200 hover:bg-slate-700' 
+                            : 'bg-slate-50 border-slate-200 text-blue-600 hover:text-blue-700 hover:bg-slate-100'
                         }`}
-                        aria-label="Previous Month"
                       >
-                        <ChevronLeft className="w-5 h-5" />
+                        Today
                       </button>
-                      <button 
-                        id="btn-next-month"
-                        onClick={handleNextMonth} 
-                        className={`p-2 rounded-xl transition-colors cursor-pointer ${
-                          darkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'
-                        }`}
-                        aria-label="Next Month"
-                      >
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
+                      <div className="flex gap-1 border-l pl-2 dark:border-slate-850 border-slate-150">
+                        <button 
+                          id="btn-prev-month"
+                          onClick={handlePrevMonth} 
+                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                            darkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'
+                          }`}
+                          aria-label="Previous Month"
+                        >
+                          <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button 
+                          id="btn-next-month"
+                          onClick={handleNextMonth} 
+                          className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                            darkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'
+                          }`}
+                          aria-label="Next Month"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -846,11 +891,17 @@ export default function App() {
                       if (!date) return <div key={`empty-${i}`} className="aspect-square" />;
                       const dateStr = formatDate(date);
                       const dayHistory = history[dateStr] || [];
-                      const completedCount = dayHistory.length;
+                      
+                      const visibleTasksForDate = getVisibleTasksForDate(dateStr);
+                      const visibleCount = visibleTasksForDate.length;
+                      const completedCount = dayHistory.filter(idx => 
+                        visibleTasksForDate.some(vt => vt.originalIndex === idx)
+                      ).length;
+                      
                       const isSelected = selectedDate === dateStr;
                       const isToday = formatDate(new Date()) === dateStr;
-                      const hasGoals = tasks.length > 0;
-                      const isFullyCompleted = hasGoals && completedCount === tasks.length;
+                      const hasGoals = visibleCount > 0;
+                      const isFullyCompleted = hasGoals && completedCount === visibleCount;
 
                       return (
                         <motion.button
@@ -902,11 +953,11 @@ export default function App() {
                           
                           {/* Visual Progress Indicators (Dots) */}
                           <div className="flex flex-wrap justify-center gap-0.5 mt-1 px-1 max-w-[90%] mx-auto">
-                            {tasks.map((_, dotIdx) => {
-                              const isCompleted = dayHistory.includes(dotIdx);
+                            {visibleTasksForDate.map((vt) => {
+                              const isCompleted = dayHistory.includes(vt.originalIndex);
                               return (
                                 <div 
-                                  key={dotIdx}
+                                  key={vt.originalIndex}
                                   className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
                                     isCompleted 
                                       ? isFullyCompleted
@@ -953,9 +1004,9 @@ export default function App() {
                       </div>
                       <div className="text-right">
                         <span className={`text-3xl font-black ${darkMode ? 'text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.6)]' : 'text-blue-600'}`}>
-                          {(history[selectedDate]?.length || 0)}
+                          {visibleTasksForSelectedDate.filter(vt => history[selectedDate]?.includes(vt.originalIndex)).length}
                         </span>
-                        <span className={`font-bold ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>/{tasks.length}</span>
+                        <span className={`font-bold ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>/{visibleTasksForSelectedDate.length}</span>
                       </div>
                     </div>
 
@@ -965,9 +1016,16 @@ export default function App() {
                     }`}>
                       <motion.div 
                         initial={{ width: 0 }}
-                        animate={{ width: `${tasks.length > 0 ? ((history[selectedDate]?.length || 0) / tasks.length) * 100 : 0}%` }}
+                        animate={{ 
+                          width: `${
+                            visibleTasksForSelectedDate.length > 0 
+                              ? (visibleTasksForSelectedDate.filter(vt => history[selectedDate]?.includes(vt.originalIndex)).length / visibleTasksForSelectedDate.length) * 100 
+                              : 0
+                          }%` 
+                        }}
                         className={`h-full transition-colors duration-500 ${
-                          (history[selectedDate]?.length || 0) === tasks.length && tasks.length > 0 
+                          visibleTasksForSelectedDate.length > 0 &&
+                          visibleTasksForSelectedDate.filter(vt => history[selectedDate]?.includes(vt.originalIndex)).length === visibleTasksForSelectedDate.length
                             ? 'bg-gradient-to-r from-amber-400 to-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' 
                             : darkMode 
                               ? 'bg-gradient-to-r from-cyan-450 to-blue-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]'
@@ -977,75 +1035,98 @@ export default function App() {
                     </div>
 
                     <div className="space-y-3">
-                      {tasks.map((task, idx) => {
-                        const isDone = history[selectedDate]?.includes(idx);
-                        return (
-                          <motion.div
-                            key={idx}
-                            id={`task-item-${idx}`}
-                            initial={false}
-                            animate={{ 
-                              backgroundColor: isDone 
-                                ? darkMode ? '#0f2d2b' : '#f0fdf4' 
-                                : darkMode ? '#1e293b' : '#ffffff',
-                              borderColor: isDone
-                                ? darkMode ? '#115e59' : '#bbf7d0'
-                                : darkMode ? '#334155' : '#f1f5f9'
-                            }}
-                            onClick={() => toggleTask(idx)}
-                            className={`
-                              group flex items-center p-4 rounded-2xl border cursor-pointer transition-all select-none
-                              ${isDone 
-                                ? 'shadow-sm' 
-                                : darkMode 
-                                  ? 'hover:border-slate-600 hover:shadow-[0_0_12px_rgba(148,163,184,0.1)]' 
-                                  : 'hover:border-blue-200 hover:shadow-sm'
-                              }
-                            `}
-                          >
-                            {/* Tactile Checkbox: whileTap scale down, spring pulse draw */}
-                            <motion.div 
-                              whileTap={{ scale: 0.8 }}
-                              className="mr-4 shrink-0 cursor-pointer"
+                      {visibleTasksForSelectedDate.length === 0 ? (
+                        <div className={`text-center py-8 text-sm font-semibold ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                          No active routines for this day.
+                        </div>
+                      ) : (
+                        visibleTasksForSelectedDate.map(({ name, type, endDate, originalIndex }) => {
+                          const isDone = history[selectedDate]?.includes(originalIndex);
+                          
+                          // Style configurations for classes
+                          let cardBg = '';
+                          let cardBorder = '';
+                          let checkboxColor = '';
+                          let badgeBg = '';
+                          let badgeText = '';
+                          let textStyle = '';
+                          
+                          if (isDone) {
+                            textStyle = 'line-through opacity-50 decoration-slate-400';
+                            if (type === 'evergreen') {
+                              cardBg = darkMode ? 'bg-emerald-950/20' : 'bg-emerald-50/50';
+                              cardBorder = darkMode ? 'border-emerald-900/60' : 'border-emerald-100';
+                              checkboxColor = 'text-emerald-500 fill-emerald-50';
+                            } else if (type === 'target_quest') {
+                              cardBg = darkMode ? 'bg-rose-950/20' : 'bg-rose-50/50';
+                              cardBorder = darkMode ? 'border-rose-900/60' : 'border-rose-100';
+                              checkboxColor = 'text-rose-500 fill-rose-50';
+                            } else { // daily_sprint
+                              cardBg = darkMode ? 'bg-amber-950/20' : 'bg-amber-50/50';
+                              cardBorder = darkMode ? 'border-amber-900/60' : 'border-amber-100';
+                              checkboxColor = 'text-amber-500 fill-amber-50';
+                            }
+                          } else {
+                            cardBg = darkMode ? 'bg-slate-900/40 hover:bg-slate-850/40' : 'bg-white hover:bg-slate-50';
+                            cardBorder = darkMode ? 'border-slate-805 hover:border-slate-700' : 'border-slate-100 hover:border-slate-200';
+                            checkboxColor = darkMode ? 'text-slate-600 hover:text-slate-500' : 'text-slate-350 hover:text-slate-400';
+                            textStyle = darkMode ? 'text-slate-200 font-semibold' : 'text-slate-700 font-semibold';
+                          }
+
+                          if (type === 'evergreen') {
+                            badgeBg = darkMode ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/40' : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            badgeText = 'Evergreen Routine';
+                          } else if (type === 'target_quest') {
+                            badgeBg = darkMode ? 'bg-rose-950/40 text-rose-300 border-rose-800/40' : 'bg-rose-50 text-rose-700 border-rose-200';
+                            badgeText = endDate ? `Milestone Quest • Until ${new Date(endDate.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Milestone Quest';
+                          } else { // daily_sprint
+                            badgeBg = darkMode ? 'bg-amber-950/40 text-amber-300 border-amber-800/40' : 'bg-amber-100/10 text-amber-700 border-amber-250';
+                            badgeText = endDate ? `Daily Sprint • Until ${new Date(endDate.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Daily Sprint';
+                          }
+
+                          return (
+                            <motion.div
+                              key={originalIndex}
+                              id={`task-item-${originalIndex}`}
+                              initial={false}
                               animate={{ 
-                                scale: isDone ? [1, 1.15, 1] : 1,
+                                scale: 1
                               }}
-                              transition={{ duration: 0.25 }}
+                              onClick={() => toggleTask(originalIndex)}
+                              className={`
+                                group flex items-start p-4 rounded-3xl border cursor-pointer transition-all select-none gap-3 justify-between shadow-sm ${cardBg} ${cardBorder}
+                              `}
                             >
-                              {isDone ? (
-                                <CheckCircle2 className={`w-6 h-6 transition-all ${
-                                  darkMode 
-                                    ? 'text-cyan-455 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] fill-cyan-950/40' 
-                                    : 'text-emerald-500 fill-emerald-50'
-                                }`} />
-                              ) : (
-                                <Circle className={`w-6 h-6 transition-all ${
-                                  darkMode 
-                                    ? 'text-slate-600 group-hover:text-cyan-400 group-hover:drop-shadow-[0_0_6px_rgba(34,211,238,0.6)]' 
-                                    : 'text-slate-300 group-hover:text-blue-400'
-                                }`} />
-                              )}
+                              <div className="flex items-start gap-3">
+                                {/* Tactile Checkbox: whileTap scale down, spring pulse draw */}
+                                <motion.div 
+                                  whileTap={{ scale: 0.82 }}
+                                  className="shrink-0 mt-0.5 cursor-pointer"
+                                  animate={{ 
+                                    scale: isDone ? [1, 1.15, 1] : 1,
+                                  }}
+                                  transition={{ duration: 0.25 }}
+                                >
+                                  {isDone ? (
+                                    <CheckCircle2 className={`w-6 h-6 transition-all ${checkboxColor} drop-shadow-[0_0_6px_rgba(16,185,129,0.3)]`} />
+                                  ) : (
+                                    <Circle className={`w-6 h-6 transition-all ${checkboxColor}`} />
+                                  )}
+                                </motion.div>
+                                
+                                <div className="flex flex-col gap-1 align-left text-left">
+                                  <span className={`font-semibold text-sm md:text-base leading-snug ${textStyle}`}>
+                                    {name}
+                                  </span>
+                                  <span className={`inline-flex items-center text-[10px] font-bold px-2.5 py-0.5 rounded-full border fit-content w-max ${badgeBg}`}>
+                                    {badgeText}
+                                  </span>
+                                </div>
+                              </div>
                             </motion.div>
-                            
-                            <span 
-                              style={{ 
-                                transition: "all 0.3s cubic-bezier(0.25, 1, 0.5, 1)" 
-                              }}
-                              className={`font-medium text-sm md:text-base ${
-                                isDone 
-                                  ? darkMode 
-                                    ? 'text-cyan-350 line-through decoration-cyan-900/60 font-semibold opacity-50' 
-                                    : 'text-emerald-700 line-through decoration-emerald-250 opacity-50' 
-                                  : darkMode 
-                                    ? 'text-slate-200 opacity-100' 
-                                    : 'text-slate-700 opacity-100'
-                              }`}
-                            >
-                              {task}
-                            </span>
-                          </motion.div>
-                        );
-                      })}
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </section>
@@ -1320,7 +1401,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <div className="space-y-3 max-h-[35vh] overflow-y-auto pr-1">
+                    <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
                       <AnimatePresence initial={false}>
                         {tasks.map((t, i) => (
                           <motion.div 
@@ -1330,79 +1411,139 @@ export default function App() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.9 }}
                             transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                            className="flex gap-2 items-center text-left"
+                            className={`flex flex-col gap-2.5 p-3.5 rounded-2xl border transition-all text-left ${
+                              darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-50 border-slate-100'
+                            }`}
                           >
-                            {/* Grip drag handle icon for visual cue */}
-                            <div 
-                              className={`p-1 select-none flex items-center cursor-grab ${
-                                darkMode ? 'text-slate-650' : 'text-slate-350'
-                              }`}
-                              title="Re-order grip"
-                            >
-                              <GripVertical className="w-4 h-4 shrink-0" />
+                            <div className="flex gap-2 items-center">
+                              {/* Grip drag handle icon for visual cue */}
+                              <div 
+                                className={`p-1 select-none flex items-center cursor-grab ${
+                                  darkMode ? 'text-slate-650' : 'text-slate-350'
+                                }`}
+                                title="Re-order grip"
+                              >
+                                <GripVertical className="w-4 h-4 shrink-0" />
+                              </div>
+
+                              {/* Up/Down arrows with layout transitions */}
+                              <div className="flex flex-col gap-0.5 shrink-0 select-none">
+                                <button
+                                  type="button"
+                                  id={`btn-reorder-up-${i}`}
+                                  disabled={i === 0}
+                                  onClick={() => moveTask(i, 'up')}
+                                  className={`p-0.5 rounded transition-all cursor-pointer ${
+                                    i === 0
+                                      ? 'opacity-35 cursor-not-allowed'
+                                      : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  id={`btn-reorder-down-${i}`}
+                                  disabled={i === tasks.length - 1}
+                                  onClick={() => moveTask(i, 'down')}
+                                  className={`p-0.5 rounded transition-all cursor-pointer ${
+                                    i === tasks.length - 1
+                                      ? 'opacity-35 cursor-not-allowed'
+                                      : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <span className={`text-xs font-mono font-bold w-5 text-center ${
+                                darkMode ? 'text-indigo-400' : 'text-slate-400'
+                              }`}>{(i + 1).toString().padStart(2, '0')}</span>
+
+                              <input
+                                id={`input-habit-${i}`}
+                                value={t.name || ''}
+                                onChange={(e) => {
+                                  const newTasks = [...tasks];
+                                  newTasks[i] = { ...newTasks[i], name: e.target.value };
+                                  setTasks(newTasks);
+                                }}
+                                className={`flex-1 px-3 py-2 border rounded-xl focus:ring-2 focus:bg-white outline-none transition-all text-xs md:text-sm font-semibold ${
+                                  darkMode 
+                                    ? 'bg-slate-800 border-slate-700 text-slate-100 focus:text-slate-900 focus:ring-cyan-500' 
+                                    : 'bg-white border-slate-200 text-slate-700 focus:ring-blue-500'
+                                }`}
+                                placeholder={`Habit name`}
+                              />
+
+                              {tasks.length > 1 && (
+                                <button
+                                  type="button"
+                                  id={`btn-remove-habit-${i}`}
+                                  onClick={() => removeTaskInSettings(i)}
+                                  className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                                    darkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-800' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+                                  }`}
+                                  title="Delete Habit"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
 
-                            {/* Up/Down arrows with layout transitions */}
-                            <div className="flex flex-col gap-0.5 shrink-0 select-none">
-                              <button
-                                type="button"
-                                id={`btn-reorder-up-${i}`}
-                                disabled={i === 0}
-                                onClick={() => moveTask(i, 'up')}
-                                className={`p-0.5 rounded transition-all cursor-pointer ${
-                                  i === 0
-                                    ? 'opacity-35 cursor-not-allowed'
-                                    : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
-                                }`}
-                              >
-                                <ChevronUp className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                id={`btn-reorder-down-${i}`}
-                                disabled={i === tasks.length - 1}
-                                onClick={() => moveTask(i, 'down')}
-                                className={`p-0.5 rounded transition-all cursor-pointer ${
-                                  i === tasks.length - 1
-                                    ? 'opacity-35 cursor-not-allowed'
-                                    : darkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'
-                                }`}
-                              >
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            <div className="flex flex-wrap items-center gap-3 pl-12 mt-1">
+                              <div className="flex flex-col gap-0.5 min-w-[130px]">
+                                <label className={`text-[10px] font-bold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Class Type</label>
+                                <select
+                                  id={`select-habit-type-${i}`}
+                                  value={t.type || 'evergreen'}
+                                  onChange={(e) => {
+                                    const newTasks = [...tasks];
+                                    const newType = e.target.value as any;
+                                    newTasks[i] = { 
+                                      ...newTasks[i], 
+                                      type: newType,
+                                      // If user switches to evergreen, end date clears. Else init with a week from now.
+                                      endDate: newType === 'evergreen' ? undefined : newTasks[i].endDate || formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+                                    };
+                                    setTasks(newTasks);
+                                  }}
+                                  className={`px-2 py-1.5 border rounded-lg text-[11px] font-bold outline-none transition-colors ${
+                                    darkMode 
+                                      ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
+                                      : 'bg-white border-slate-200 text-slate-700 focus:border-blue-500'
+                                  }`}
+                                >
+                                  <option value="evergreen">Evergreen Routine 🟢</option>
+                                  <option value="target_quest">Milestone Quest 🔴</option>
+                                  <option value="daily_sprint">Daily Sprint 🟡</option>
+                                </select>
+                              </div>
 
-                            <span className={`text-xs font-mono font-bold w-5 text-center ${
-                              darkMode ? 'text-indigo-400' : 'text-slate-400'
-                            }`}>{(i + 1).toString().padStart(2, '0')}</span>
-                            <input
-                              id={`input-habit-${i}`}
-                              value={t}
-                              onChange={(e) => {
-                                const newTasks = [...tasks];
-                                newTasks[i] = e.target.value;
-                                setTasks(newTasks);
-                              }}
-                              className={`flex-1 px-4 py-2.5 border rounded-xl focus:ring-2 focus:bg-white outline-none transition-all text-sm font-semibold ${
-                                darkMode 
-                                  ? 'bg-slate-800/80 border-slate-705 text-slate-100 focus:text-slate-900 focus:ring-cyan-500' 
-                                  : 'bg-slate-50 hover:bg-slate-100/50 border-slate-200 text-slate-700 focus:ring-blue-500'
-                              }`}
-                              placeholder={`Habit name`}
-                            />
-                            {tasks.length > 1 && (
-                              <button
-                                type="button"
-                                id={`btn-remove-habit-${i}`}
-                                onClick={() => removeTaskInSettings(i)}
-                                className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
-                                  darkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-800' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
-                                }`}
-                                title="Delete Habit"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
+                              {t.type && t.type !== 'evergreen' && (
+                                <div className="flex flex-col gap-0.5">
+                                  <label className={`text-[10px] font-bold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Target End Date</label>
+                                  <input
+                                    type="date"
+                                    id={`input-habit-date-${i}`}
+                                    value={t.endDate || ''}
+                                    onChange={(e) => {
+                                      const newTasks = [...tasks];
+                                      newTasks[i] = { 
+                                        ...newTasks[i], 
+                                        endDate: e.target.value
+                                      };
+                                      setTasks(newTasks);
+                                    }}
+                                    className={`px-2 py-1 border rounded-lg text-[11px] font-mono font-bold outline-none transition-colors ${
+                                      darkMode 
+                                        ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
+                                        : 'bg-white border-slate-200 text-slate-700 focus:border-blue-500'
+                                    }`}
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </motion.div>
                         ))}
                       </AnimatePresence>

@@ -13,14 +13,14 @@ import {
   Sparkles,
   Info
 } from 'lucide-react';
-import { HabitHistory } from '../types';
+import { HabitHistory, HabitTask } from '../types';
 import { calculateStatsAndMilestones, MILESTONES, Milestone } from '../utils/achievementService';
 import { formatDate } from '../utils/dateHelpers';
 import { audioEngine } from '../utils/audio';
 
 interface DashboardProps {
   history: HabitHistory;
-  tasks: string[];
+  tasks: HabitTask[];
   darkMode: boolean;
   soundMuted: boolean;
   monthlyGoal: number;
@@ -39,8 +39,8 @@ export default function Dashboard({
 }: DashboardProps) {
   // --- Calculate Achievement Metrics & Stats ---
   const stats = useMemo(() => {
-    return calculateStatsAndMilestones(history, tasks.length);
-  }, [history, tasks.length]);
+    return calculateStatsAndMilestones(history, tasks);
+  }, [history, tasks]);
 
   const [hoveredCell, setHoveredCell] = useState<{ date: string; count: number; rate: number; x: number; y: number } | null>(null);
 

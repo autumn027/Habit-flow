@@ -1,4 +1,4 @@
-import { HabitHistory } from '../types';
+import { HabitHistory, HabitTask } from '../types';
 
 export interface Milestone {
   id: string;
@@ -107,7 +107,7 @@ export interface AchievementStats {
 /**
  * Computes general statistics and milestones unlocked based on history and current tasks setup
  */
-export function calculateStatsAndMilestones(history: HabitHistory, totalTasksCount: number): AchievementStats {
+export function calculateStatsAndMilestones(history: HabitHistory, tasks: HabitTask[]): AchievementStats {
   let totalCompletedCount = 0;
   
   // Calculate total completed tasks
@@ -115,11 +115,33 @@ export function calculateStatsAndMilestones(history: HabitHistory, totalTasksCou
     totalCompletedCount += (completedArray || []).length;
   });
 
+  // Calculate visible tasks for date dynamically
+  const getVisibleTasksForDate = (dateStr: string) => {
+    return tasks.map((task, originalIndex) => ({ ...task, originalIndex }))
+      .filter(({ type, endDate, originalIndex }) => {
+        if (type === 'evergreen') return true;
+        if (endDate && dateStr > endDate) return false;
+        
+        if (type === 'target_quest') {
+          const completionDate = Object.keys(history).find(d => history[d]?.includes(originalIndex));
+          if (completionDate) {
+            return dateStr <= completionDate;
+          }
+        }
+        return true;
+      });
+  };
+
   // Calculate streaks history
   const sortedDates = Object.keys(history)
     .filter(dateStr => {
+      const visibleTasks = getVisibleTasksForDate(dateStr);
+      if (visibleTasks.length === 0) return false;
       const dayHistory = history[dateStr] || [];
-      return totalTasksCount > 0 && dayHistory.length === totalTasksCount;
+      const completedVisible = dayHistory.filter(idx => 
+        visibleTasks.some(vt => vt.originalIndex === idx)
+      );
+      return completedVisible.length === visibleTasks.length;
     })
     .sort(); // Sort chronological
 
