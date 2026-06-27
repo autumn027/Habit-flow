@@ -39,6 +39,8 @@ import { googleDriveService } from './utils/googleDriveService';
 
 // Dashboard and achievement service imports
 import Dashboard from './components/Dashboard';
+import AILifeSaver from './components/AILifeSaver';
+import GeminiSettings from './components/GeminiSettings';
 import { calculateStatsAndMilestones, MILESTONES, Milestone } from './utils/achievementService';
 
 export default function App() {
@@ -51,7 +53,7 @@ export default function App() {
   const companionType = darkMode ? darkCompanion : lightCompanion;
   
   // Dashboard & UX Customization States
-  const [currentView, setCurrentView] = useState<'tracker' | 'dashboard'>('tracker');
+  const [currentView, setCurrentView] = useState<'tracker' | 'dashboard' | 'ai_lifesaver'>('tracker');
   const [soundMuted, setSoundMuted] = useState<boolean>(false);
   const [monthlyGoal, setMonthlyGoal] = useState<number>(60);
   const [unlockedMilestones, setUnlockedMilestones] = useState<string[]>([]);
@@ -70,6 +72,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
   const [showDevInfo, setShowDevInfo] = useState<boolean>(false);
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState<boolean>(false);
   const [isRecentlyCompleted, setIsRecentlyCompleted] = useState<boolean>(false);
   const [companionAction, setCompanionAction] = useState<{ type: 'check' | 'uncheck' | 'complete_all'; timestamp: number } | null>(null);
 
@@ -323,7 +326,7 @@ export default function App() {
           const stats = calculateStatsAndMilestones(savedHistory, migrateTasksList(savedTasks || tasks));
           setUnlockedMilestones(stats.unlockedList);
         }
-        if (savedView === 'tracker' || savedView === 'dashboard') {
+        if (savedView === 'tracker' || savedView === 'dashboard' || savedView === 'ai_lifesaver') {
           setCurrentView(savedView);
         }
       }
@@ -504,6 +507,14 @@ export default function App() {
   const addTaskInSettings = () => {
     if (tasks.length >= 10) return;
     setTasks([...tasks, { name: `New Habit ${tasks.length + 1}`, type: "evergreen" }]);
+  };
+
+  const handleAddGeneratedTasks = (newTasks: HabitTask[]) => {
+    if (tasks.length >= 10) return;
+    const tasksToAdd = newTasks.slice(0, 10 - tasks.length);
+    setTasks([...tasks, ...tasksToAdd]);
+    setCurrentView('tracker');
+    audioEngine.playSuccessChime();
   };
 
   // --- Calendar Month Navigation ---
@@ -850,10 +861,50 @@ export default function App() {
                     <Trophy className="w-3.5 h-3.5" />
                     <span>Consistency Hub</span>
                   </button>
+                  <button
+                    type="button"
+                    id="tab-view-ai-lifesaver"
+                    onClick={() => {
+                      const hasKey = localStorage.getItem('gemini_api_key');
+                      if (!hasKey) {
+                        setShowApiKeyPrompt(true);
+                      } else {
+                        setCurrentView('ai_lifesaver');
+                        audioEngine.playCheckPop();
+                      }
+                    }}
+                    className={`px-5 py-2.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                      currentView === 'ai_lifesaver'
+                        ? darkMode
+                          ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-slate-950 font-black shadow-[0_0_12px_rgba(34,211,238,0.25)]'
+                          : 'bg-slate-800 text-white shadow-md'
+                        : darkMode
+                          ? 'text-slate-400 hover:text-slate-200'
+                          : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>HabitFlow AI</span>
+                  </button>
                 </div>
               </div>
 
-              {currentView === 'dashboard' ? (
+              <div className={currentView === 'ai_lifesaver' ? 'block' : 'hidden'}>
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <AILifeSaver
+                    tasks={tasks}
+                    history={history}
+                    darkMode={darkMode}
+                    onAddTasks={handleAddGeneratedTasks}
+                  />
+                </motion.div>
+              </div>
+
+              <div className={currentView === 'dashboard' ? 'block' : 'hidden'}>
                 <motion.div
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -869,7 +920,9 @@ export default function App() {
                     onBackToTracker={() => setCurrentView('tracker')}
                   />
                 </motion.div>
-              ) : (
+              </div>
+
+              <div className={currentView === 'tracker' ? 'block' : 'hidden'}>
                 <div id="main-grid" className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
                 {/* Left Column: Calendar */}
@@ -1175,7 +1228,7 @@ export default function App() {
                   </div>
                 </section>
               </div>
-            )}
+            </div>
             </div>
 
             {/* Settings Modal */}
@@ -1342,6 +1395,8 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+
+                    <GeminiSettings darkMode={darkMode} />
 
                     {/* Google Drive Cloud Sync Panel */}
                     <div className={`p-4 rounded-2xl border mb-6 transition-all ${
@@ -1816,6 +1871,64 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* API Key Prompt Modal */}
+      <AnimatePresence>
+        {showApiKeyPrompt && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[120] flex items-center justify-center p-4 cursor-default"
+            onClick={() => setShowApiKeyPrompt(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.85, y: 30 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.85, y: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className={`rounded-3xl p-6 md:p-8 max-w-sm w-full text-center border relative shadow-2xl ${
+                darkMode 
+                  ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-[0_12px_50px_rgba(0,0,0,0.8)]' 
+                  : 'bg-white border-slate-100 text-slate-900 shadow-2xl shadow-slate-200/50'
+              }`}
+            >
+              <div className="flex flex-col items-center">
+                <div className={`w-16 h-16 rounded-2xl mb-4 flex items-center justify-center border ${
+                  darkMode ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-purple-100 border-purple-200 text-purple-600'
+                }`}>
+                  <Sparkles className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">API Key Required</h3>
+                <p className={`text-sm mb-6 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                  To access HabitFlow AI features, you need to configure your Gemini API Key in the settings first.
+                </p>
+                <div className="flex gap-3 w-full">
+                  <button 
+                    onClick={() => setShowApiKeyPrompt(false)}
+                    className={`flex-1 py-3 rounded-xl font-bold transition-all text-sm ${
+                      darkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowApiKeyPrompt(false);
+                      setShowSettings(true);
+                    }}
+                    className={`flex-1 py-3 rounded-xl font-bold transition-all text-sm flex justify-center items-center gap-2 ${
+                      darkMode ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
+                    }`}
+                  >
+                    Go to Settings
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
