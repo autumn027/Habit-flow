@@ -5,5 +5,6 @@ export interface HabitHistory {
 export interface HabitTask {
   name: string;
   type: 'evergreen' | 'target_quest' | 'daily_sprint';
+  startDate?: string; // YYYY-MM-DD
   endDate?: string; // YYYY-MM-DD
 }

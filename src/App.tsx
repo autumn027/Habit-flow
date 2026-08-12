@@ -128,6 +128,7 @@ export default function App() {
       return {
         name: t.name || 'Unnamed Habit',
         type: t.type || 'evergreen',
+        startDate: t.startDate,
         endDate: t.endDate
       };
     });
@@ -135,12 +136,18 @@ export default function App() {
 
   const getVisibleTasksForDate = useCallback((dateStr: string) => {
     return tasks.map((task, originalIndex) => ({ ...task, originalIndex }))
-      .filter(({ type, endDate, originalIndex }) => {
-        if (type === 'evergreen') return true;
-        
+      .filter(({ type, startDate, endDate, originalIndex }) => {
+        // Enforce start date boundary for all tasks
+        if (startDate && dateStr < startDate) {
+          return false;
+        }
+
+        // Enforce end date boundary for all tasks
         if (endDate && dateStr > endDate) {
           return false;
         }
+
+        if (type === 'evergreen') return true;
         
         if (type === 'target_quest') {
           const completionDate = Object.keys(history).find(d => history[d]?.includes(originalIndex));
@@ -488,30 +495,42 @@ export default function App() {
   const removeTaskInSettings = (indexToRemove: number) => {
     if (tasks.length <= 1) return; // Must keep at least one habit
     
-    // Update tasks
-    const newTasks = tasks.filter((_, idx) => idx !== indexToRemove);
-    setTasks(newTasks);
+    // Check if task has any history
+    const hasHistory = Object.values(history).some(dayHistory => dayHistory?.includes(indexToRemove));
 
-    // Shift indexes in history map to prevent wrong tasks from staying finished
-    const updatedHistory: HabitHistory = {};
-    Object.keys(history).forEach((dateStr) => {
-      const dayHistory = history[dateStr] || [];
-      const newDayHistory = dayHistory
-        .filter((idx) => idx !== indexToRemove)
-        .map((idx) => (idx > indexToRemove ? idx - 1 : idx));
-      updatedHistory[dateStr] = newDayHistory;
-    });
-    setHistory(updatedHistory);
+    if (hasHistory) {
+      // Soft delete: set endDate to today or yesterday, but since it's just stopping it from tomorrow onward:
+      // Actually, if we set endDate to today, it will still show today. If we set it to yesterday, it won't show today.
+      // The prompt says "stop generating future instances from that date onward". We will set endDate to today.
+      const newTasks = [...tasks];
+      newTasks[indexToRemove] = { ...newTasks[indexToRemove], endDate: formatDate(new Date()) };
+      setTasks(newTasks);
+    } else {
+      // Hard delete if no history
+      const newTasks = tasks.filter((_, idx) => idx !== indexToRemove);
+      setTasks(newTasks);
+
+      // Shift indexes in history map to prevent wrong tasks from staying finished
+      const updatedHistory: HabitHistory = {};
+      Object.keys(history).forEach((dateStr) => {
+        const dayHistory = history[dateStr] || [];
+        const newDayHistory = dayHistory
+          .filter((idx) => idx !== indexToRemove)
+          .map((idx) => (idx > indexToRemove ? idx - 1 : idx));
+        updatedHistory[dateStr] = newDayHistory;
+      });
+      setHistory(updatedHistory);
+    }
   };
 
   const addTaskInSettings = () => {
     if (tasks.length >= 10) return;
-    setTasks([...tasks, { name: `New Habit ${tasks.length + 1}`, type: "evergreen" }]);
+    setTasks([...tasks, { name: `New Habit ${tasks.length + 1}`, type: "evergreen", startDate: formatDate(new Date()) }]);
   };
 
   const handleAddGeneratedTasks = (newTasks: HabitTask[]) => {
     if (tasks.length >= 10) return;
-    const tasksToAdd = newTasks.slice(0, 10 - tasks.length);
+    const tasksToAdd = newTasks.slice(0, 10 - tasks.length).map(t => ({ ...t, startDate: t.startDate || formatDate(new Date()) }));
     setTasks([...tasks, ...tasksToAdd]);
     setCurrentView('tracker');
     audioEngine.playSuccessChime();
@@ -1647,8 +1666,7 @@ export default function App() {
                                     newTasks[i] = { 
                                       ...newTasks[i], 
                                       type: newType,
-                                      // If user switches to evergreen, end date clears. Else init with a week from now.
-                                      endDate: newType === 'evergreen' ? undefined : newTasks[i].endDate || formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+                                      endDate: newTasks[i].endDate || (newType !== 'evergreen' ? formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) : undefined)
                                     };
                                     setTasks(newTasks);
                                   }}
@@ -1664,29 +1682,49 @@ export default function App() {
                                 </select>
                               </div>
 
-                              {t.type && t.type !== 'evergreen' && (
-                                <div className="flex flex-col gap-0.5">
-                                  <label className={`text-[10px] font-bold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Target End Date</label>
-                                  <input
-                                    type="date"
-                                    id={`input-habit-date-${i}`}
-                                    value={t.endDate || ''}
-                                    onChange={(e) => {
-                                      const newTasks = [...tasks];
-                                      newTasks[i] = { 
-                                        ...newTasks[i], 
-                                        endDate: e.target.value
-                                      };
-                                      setTasks(newTasks);
-                                    }}
-                                    className={`px-2 py-1 border rounded-lg text-[11px] font-mono font-bold outline-none transition-colors ${
-                                      darkMode 
-                                        ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
-                                        : 'bg-white border-slate-200 text-slate-700 focus:border-blue-500'
-                                    }`}
-                                  />
-                                </div>
-                              )}
+                              <div className="flex flex-col gap-0.5">
+                                <label className={`text-[10px] font-bold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Start Date</label>
+                                <input
+                                  type="date"
+                                  id={`input-habit-startdate-${i}`}
+                                  value={t.startDate || ''}
+                                  onChange={(e) => {
+                                    const newTasks = [...tasks];
+                                    newTasks[i] = { 
+                                      ...newTasks[i], 
+                                      startDate: e.target.value || undefined
+                                    };
+                                    setTasks(newTasks);
+                                  }}
+                                  className={`px-2 py-1 border rounded-lg text-[11px] font-mono font-bold outline-none transition-colors ${
+                                    darkMode 
+                                      ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
+                                      : 'bg-white border-slate-200 text-slate-700 focus:border-blue-500'
+                                  }`}
+                                />
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <label className={`text-[10px] font-bold ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>End Date / Stop</label>
+                                <input
+                                  type="date"
+                                  id={`input-habit-enddate-${i}`}
+                                  value={t.endDate || ''}
+                                  onChange={(e) => {
+                                    const newTasks = [...tasks];
+                                    newTasks[i] = { 
+                                      ...newTasks[i], 
+                                      endDate: e.target.value || undefined
+                                    };
+                                    setTasks(newTasks);
+                                  }}
+                                  className={`px-2 py-1 border rounded-lg text-[11px] font-mono font-bold outline-none transition-colors ${
+                                    darkMode 
+                                      ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
+                                      : 'bg-white border-slate-200 text-slate-700 focus:border-blue-500'
+                                  }`}
+                                />
+                              </div>
                             </div>
                           </motion.div>
                         ))}
