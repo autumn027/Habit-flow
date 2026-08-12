@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronLeft, 
@@ -27,7 +27,10 @@ import {
   ChevronUp,
   ChevronDown,
   Volume2,
-  VolumeX
+  VolumeX,
+  Download,
+  Upload,
+  FileJson
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -75,6 +78,9 @@ export default function App() {
   const [showApiKeyPrompt, setShowApiKeyPrompt] = useState<boolean>(false);
   const [isRecentlyCompleted, setIsRecentlyCompleted] = useState<boolean>(false);
   const [companionAction, setCompanionAction] = useState<{ type: 'check' | 'uncheck' | 'complete_all'; timestamp: number } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [restoreModalData, setRestoreModalData] = useState<any>(null);
 
   // --- Google Drive State Integration & Subscription ---
   const [driveState, setDriveState] = useState(() => googleDriveService.getState());
@@ -221,6 +227,127 @@ export default function App() {
     await googleDriveService.signOut();
     setSyncFeedback({ type: 'info', message: 'Signed out of Google session.' });
     setTimeout(() => setSyncFeedback(null), 4000);
+  };
+
+  const handleLocalBackup = () => {
+    try {
+      const dataToExport = {
+        appVersion: "1.2.0",
+        exportTimestamp: new Date().toISOString(),
+        data: {
+          tasks,
+          history,
+          darkMode,
+          hasStarted,
+          companionType,
+          lightCompanion,
+          darkCompanion,
+          syncCompanions,
+          soundMuted,
+          unlockedMilestones,
+          currentView,
+          monthlyGoal
+        }
+      };
+      const jsonString = JSON.stringify(dataToExport, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `habitflow-backup-${formatDate(new Date())}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSyncFeedback({ type: 'success', message: 'Local backup downloaded successfully!' });
+      setTimeout(() => setSyncFeedback(null), 5000);
+    } catch (e) {
+      setSyncFeedback({ type: 'error', message: 'Failed to generate local backup file.' });
+      setTimeout(() => setSyncFeedback(null), 5000);
+    }
+  };
+
+  const handleLocalRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json') && file.type !== 'application/json') {
+      setSyncFeedback({ type: 'error', message: 'Invalid file format. Please upload a .json backup file.' });
+      setTimeout(() => setSyncFeedback(null), 5000);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (!json.data || !json.appVersion) {
+          throw new Error("Invalid backup schema");
+        }
+        setRestoreModalData(json.data);
+      } catch (err) {
+        setSyncFeedback({ type: 'error', message: 'Failed to parse JSON file or invalid backup format.' });
+        setTimeout(() => setSyncFeedback(null), 5000);
+      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
+  const executeRestore = (mode: 'overwrite' | 'merge') => {
+    if (!restoreModalData) return;
+    const data = restoreModalData;
+    
+    if (mode === 'overwrite') {
+      if (Array.isArray(data.tasks)) setTasks(migrateTasksList(data.tasks));
+      if (data.history) setHistory(data.history);
+    } else if (mode === 'merge') {
+      const newTasks = [...tasks];
+      const incomingTasks = Array.isArray(data.tasks) ? migrateTasksList(data.tasks) : [];
+      
+      const indexMap = new Map<number, number>();
+
+      incomingTasks.forEach((incomingTask: any, incomingIdx: number) => {
+        const existingIdx = newTasks.findIndex(t => t.name === incomingTask.name);
+        if (existingIdx === -1) {
+          newTasks.push(incomingTask);
+          indexMap.set(incomingIdx, newTasks.length - 1);
+        } else {
+          indexMap.set(incomingIdx, existingIdx);
+        }
+      });
+      setTasks(newTasks);
+
+      const newHistory = { ...history };
+      const incomingHistory = data.history || {};
+      Object.keys(incomingHistory).forEach(dateStr => {
+        const incomingIndices = incomingHistory[dateStr];
+        if (!Array.isArray(incomingIndices)) return;
+
+        const mappedIncoming = incomingIndices.map((idx: number) => indexMap.get(idx)).filter((idx: number | undefined) => idx !== undefined) as number[];
+
+        if (!newHistory[dateStr]) {
+          newHistory[dateStr] = mappedIncoming;
+        } else {
+          newHistory[dateStr] = Array.from(new Set([...newHistory[dateStr], ...mappedIncoming]));
+        }
+      });
+      setHistory(newHistory);
+    }
+
+    if (typeof data.hasStarted === 'boolean') setHasStarted(data.hasStarted);
+    if (typeof data.syncCompanions === 'boolean') setSyncCompanions(data.syncCompanions);
+    
+    const validCompanions = ['auto', 'white_cat', 'black_witch_cat', 'wise_owl', 'dog_expedition', 'mighty_lion'];
+    if (data.lightCompanion && validCompanions.includes(data.lightCompanion)) setLightCompanion(data.lightCompanion);
+    if (data.darkCompanion && validCompanions.includes(data.darkCompanion)) setDarkCompanion(data.darkCompanion);
+    if (typeof data.monthlyGoal === 'number' && data.monthlyGoal > 0) setMonthlyGoal(data.monthlyGoal);
+
+    setRestoreModalData(null);
+    setSyncFeedback({ type: 'success', message: 'Local data restored successfully!' });
+    audioEngine?.playSuccessChime?.();
+    setTimeout(() => setSyncFeedback(null), 5000);
   };
 
   // --- Daily Completion Percentage for Shih Tzu Happiness ---
@@ -1564,6 +1691,60 @@ export default function App() {
                       )}
                     </div>
 
+                    {/* Local Backup Panel */}
+                    <div className={`p-4 rounded-2xl border mb-6 transition-all ${
+                      darkMode 
+                        ? 'bg-slate-800/40 border-slate-700/60 shadow-[0_0_15px_rgba(99,102,241,0.15)]' 
+                        : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="font-bold text-xs md:text-sm block flex items-center gap-1.5">
+                            <FileJson className={`w-4 h-4 ${darkMode ? 'text-purple-400' : 'text-purple-500'}`} />
+                            Local Backup & Restore
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">Export/Import JSON backup</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          id="btn-local-export"
+                          onClick={handleLocalBackup}
+                          className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                            darkMode
+                              ? 'bg-purple-500/10 border-purple-500/30 text-purple-300 hover:bg-purple-500/20'
+                              : 'bg-purple-50 hover:bg-purple-100 text-purple-600 border-purple-200'
+                          }`}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export Data</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          id="btn-local-import"
+                          onClick={() => fileInputRef.current?.click()}
+                          className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                            darkMode
+                              ? 'bg-slate-900 border-slate-800 text-slate-350 hover:bg-slate-850 hover:text-white'
+                              : 'bg-white border-slate-250 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Import Data</span>
+                        </button>
+                        <input
+                          type="file"
+                          accept=".json,application/json"
+                          ref={fileInputRef}
+                          style={{ display: 'none' }}
+                          onChange={handleLocalRestoreFileChange}
+                        />
+                      </div>
+                    </div>
+
                     <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
                       <AnimatePresence initial={false}>
                         {tasks.map((t, i) => (
@@ -1909,6 +2090,67 @@ export default function App() {
                 </motion.div>
               )}
             </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Restore Confirmation Modal */}
+      <AnimatePresence>
+        {restoreModalData && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[120] flex items-center justify-center p-4"
+            onClick={() => setRestoreModalData(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className={`rounded-3xl p-6 md:p-8 max-w-sm w-full text-center border relative shadow-2xl ${
+                darkMode 
+                  ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-[0_12px_50px_rgba(0,0,0,0.8)]' 
+                  : 'bg-white border-slate-100 text-slate-900 shadow-2xl shadow-slate-200/50'
+              }`}
+            >
+              <div className="flex flex-col items-center">
+                <div className={`w-16 h-16 rounded-2xl mb-4 flex items-center justify-center border ${
+                  darkMode ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-amber-100 border-amber-200 text-amber-600'
+                }`}>
+                  <AlertCircle className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Restore Backup</h3>
+                <p className={`text-sm mb-6 leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                  How would you like to import this data?
+                </p>
+                <div className="flex flex-col gap-3 w-full">
+                  <button 
+                    onClick={() => executeRestore('merge')}
+                    className={`w-full py-3 rounded-xl font-bold transition-all text-sm flex justify-center items-center gap-2 border ${
+                      darkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    Merge with existing data
+                  </button>
+                  <button 
+                    onClick={() => executeRestore('overwrite')}
+                    className={`w-full py-3 rounded-xl font-bold transition-all text-sm flex justify-center items-center gap-2 ${
+                      darkMode ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30' : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
+                    }`}
+                  >
+                    Overwrite all local data
+                  </button>
+                  <button 
+                    onClick={() => setRestoreModalData(null)}
+                    className="w-full py-2 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors mt-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
