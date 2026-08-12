@@ -480,7 +480,7 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
           y: (isHovered || completionPercentage === 100 || isSleeping || !!temporaryPhrase) ? 0 : 8 
         }}
         transition={{ duration: 0.35, ease: "easeOut" }}
-        className={`absolute -top-16 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-2xl text-[10px] sm:text-xs font-bold shadow-md border text-center whitespace-nowrap z-30 ${
+        className={`absolute bottom-[calc(100%-12px)] left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-2xl text-[10px] sm:text-xs font-bold shadow-md border text-center whitespace-nowrap z-30 ${
           (isHovered || completionPercentage === 100 || isSleeping || !!temporaryPhrase) ? 'pointer-events-auto' : 'pointer-events-none'
         } ${
           theme === 'dark' 
@@ -496,7 +496,7 @@ export default function Companion({ tasksCompleted, totalTasks, theme, companion
 
       {/* Floating Zzz Snoring Indicators during Sleep */}
       {isSleeping && (
-        <div className="absolute -top-6 right-0 pointer-events-none flex flex-col font-mono text-[10px] sm:text-xs font-bold select-none z-10">
+        <div className="absolute bottom-[calc(100%-8px)] right-0 pointer-events-none flex flex-col font-mono text-[10px] sm:text-xs font-bold select-none z-10">
           <motion.span
             animate={{ y: [-4, -20], x: [0, 4, 0], opacity: [0, 1, 0] }}
             transition={{ repeat: Infinity, duration: 3.2, delay: 0 }}
