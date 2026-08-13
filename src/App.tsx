@@ -30,7 +30,8 @@ import {
   VolumeX,
   Download,
   Upload,
-  FileJson
+  FileJson,
+  Ban
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -142,7 +143,12 @@ export default function App() {
 
   const getVisibleTasksForDate = useCallback((dateStr: string) => {
     return tasks.map((task, originalIndex) => ({ ...task, originalIndex }))
-      .filter(({ type, startDate, endDate, originalIndex }) => {
+      .filter(({ type, startDate, endDate, exceptionDates, originalIndex }) => {
+        // Enforce exception dates
+        if (exceptionDates?.includes(dateStr)) {
+          return false;
+        }
+
         // Enforce start date boundary for all tasks
         if (startDate && dateStr < startDate) {
           return false;
@@ -593,15 +599,18 @@ export default function App() {
   };
 
   // --- Settings Handlers ---
-  const moveTask = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === tasks.length - 1) return;
+  const moveTask = (visibleIndex: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && visibleIndex === 0) return;
+    if (direction === 'down' && visibleIndex === visibleTasksForSelectedDate.length - 1) return;
     
-    const partnerIndex = direction === 'up' ? index - 1 : index + 1;
+    const partnerVisibleIndex = direction === 'up' ? visibleIndex - 1 : visibleIndex + 1;
+    const originalIndex1 = visibleTasksForSelectedDate[visibleIndex].originalIndex;
+    const originalIndex2 = visibleTasksForSelectedDate[partnerVisibleIndex].originalIndex;
+
     const reordered = [...tasks];
-    const temp = reordered[index];
-    reordered[index] = reordered[partnerIndex];
-    reordered[partnerIndex] = temp;
+    const temp = reordered[originalIndex1];
+    reordered[originalIndex1] = reordered[originalIndex2];
+    reordered[originalIndex2] = temp;
     setTasks(reordered);
 
     // Map history indices so completions correspond correctly to swapped habits
@@ -609,8 +618,8 @@ export default function App() {
     Object.keys(history).forEach((dateStr) => {
       const dayHistory = history[dateStr] || [];
       const newDayHistory = dayHistory.map((idx) => {
-        if (idx === index) return partnerIndex;
-        if (idx === partnerIndex) return index;
+        if (idx === originalIndex1) return originalIndex2;
+        if (idx === originalIndex2) return originalIndex1;
         return idx;
       });
       updatedHistory[dateStr] = newDayHistory;
@@ -620,24 +629,35 @@ export default function App() {
   };
 
   const removeTaskInSettings = (indexToRemove: number) => {
-    if (tasks.length <= 1) return; // Must keep at least one habit
+    if (visibleTasksForSelectedDate.length <= 1) return; // Must keep at least one habit active
     
-    // Check if task has any history
-    const hasHistory = Object.values(history).some(dayHistory => dayHistory?.includes(indexToRemove));
-
-    if (hasHistory) {
-      // Soft delete: set endDate to today or yesterday, but since it's just stopping it from tomorrow onward:
-      // Actually, if we set endDate to today, it will still show today. If we set it to yesterday, it won't show today.
-      // The prompt says "stop generating future instances from that date onward". We will set endDate to today.
+    const currentTask = tasks[indexToRemove];
+    const firstHistoryDate = Object.keys(history).sort().find(d => history[d]?.includes(indexToRemove));
+    const effectiveStart = currentTask.startDate || firstHistoryDate || '0000-00-00';
+    
+    // If it started before the selected date, we soft delete it so it remains visible in the past
+    if (effectiveStart < selectedDate) {
+      const prevDate = new Date(selectedDate);
+      prevDate.setDate(prevDate.getDate() - 1);
+      const prevDateStr = formatDate(prevDate);
+      
       const newTasks = [...tasks];
-      newTasks[indexToRemove] = { ...newTasks[indexToRemove], endDate: formatDate(new Date()) };
+      newTasks[indexToRemove] = { ...newTasks[indexToRemove], endDate: prevDateStr };
       setTasks(newTasks);
+      
+      const updatedHistory = { ...history };
+      Object.keys(updatedHistory).forEach(dateStr => {
+        if (dateStr >= selectedDate && updatedHistory[dateStr]?.includes(indexToRemove)) {
+           updatedHistory[dateStr] = updatedHistory[dateStr].filter(idx => idx !== indexToRemove);
+        }
+      });
+      setHistory(updatedHistory);
+      
     } else {
-      // Hard delete if no history
+      // Hard delete if it was created on or after the selected date
       const newTasks = tasks.filter((_, idx) => idx !== indexToRemove);
       setTasks(newTasks);
 
-      // Shift indexes in history map to prevent wrong tasks from staying finished
       const updatedHistory: HabitHistory = {};
       Object.keys(history).forEach((dateStr) => {
         const dayHistory = history[dateStr] || [];
@@ -650,14 +670,60 @@ export default function App() {
     }
   };
 
+  const handleTaskEditInSettings = (index: number, updates: Partial<HabitTask>) => {
+    const currentTask = tasks[index];
+    const isOnlyDateUpdate = Object.keys(updates).every(k => k === 'startDate' || k === 'endDate' || k === 'exceptionDates');
+    
+    if (isOnlyDateUpdate) {
+      const newTasks = [...tasks];
+      newTasks[index] = { ...newTasks[index], ...updates };
+      setTasks(newTasks);
+      return;
+    }
+    
+    const firstHistoryDate = Object.keys(history).sort().find(d => history[d]?.includes(index));
+    const effectiveStart = currentTask.startDate || firstHistoryDate || '0000-00-00';
+    
+    if (selectedDate <= effectiveStart) {
+      const newTasks = [...tasks];
+      newTasks[index] = { ...newTasks[index], ...updates };
+      setTasks(newTasks);
+      return;
+    }
+    
+    const prevDate = new Date(selectedDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = formatDate(prevDate);
+    
+    const oldTask = { ...currentTask, endDate: prevDateStr };
+    const newTask = { ...currentTask, ...updates, startDate: selectedDate };
+    
+    const newTasks = [...tasks];
+    newTasks[index] = oldTask;
+    newTasks.push(newTask);
+    const newIndex = newTasks.length - 1;
+    
+    const updatedHistory = { ...history };
+    Object.keys(updatedHistory).forEach(dateStr => {
+      if (dateStr >= selectedDate) {
+        if (updatedHistory[dateStr]?.includes(index)) {
+          updatedHistory[dateStr] = [...updatedHistory[dateStr].filter(idx => idx !== index), newIndex];
+        }
+      }
+    });
+    
+    setTasks(newTasks);
+    setHistory(updatedHistory);
+  };
+
   const addTaskInSettings = () => {
-    if (tasks.length >= 10) return;
-    setTasks([...tasks, { name: `New Habit ${tasks.length + 1}`, type: "evergreen", startDate: formatDate(new Date()) }]);
+    if (visibleTasksForSelectedDate.length >= 10) return;
+    setTasks([...tasks, { name: `New Habit ${tasks.length + 1}`, type: "evergreen", startDate: selectedDate }]);
   };
 
   const handleAddGeneratedTasks = (newTasks: HabitTask[]) => {
-    if (tasks.length >= 10) return;
-    const tasksToAdd = newTasks.slice(0, 10 - tasks.length).map(t => ({ ...t, startDate: t.startDate || formatDate(new Date()) }));
+    if (visibleTasksForSelectedDate.length >= 10) return;
+    const tasksToAdd = newTasks.slice(0, 10 - visibleTasksForSelectedDate.length).map(t => ({ ...t, startDate: t.startDate || selectedDate }));
     setTasks([...tasks, ...tasksToAdd]);
     setCurrentView('tracker');
     audioEngine.playSuccessChime();
@@ -1747,7 +1813,9 @@ export default function App() {
 
                     <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
                       <AnimatePresence initial={false}>
-                        {tasks.map((t, i) => (
+                        {visibleTasksForSelectedDate.map((t, visibleIndex) => {
+                          const i = t.originalIndex;
+                          return (
                           <motion.div 
                             key={`habit-row-${i}`}
                             layout
@@ -1776,7 +1844,7 @@ export default function App() {
                                   type="button"
                                   id={`btn-reorder-up-${i}`}
                                   disabled={i === 0}
-                                  onClick={() => moveTask(i, 'up')}
+                                  onClick={() => moveTask(visibleIndex, 'up')}
                                   className={`p-0.5 rounded transition-all cursor-pointer ${
                                     i === 0
                                       ? 'opacity-35 cursor-not-allowed'
@@ -1789,7 +1857,7 @@ export default function App() {
                                   type="button"
                                   id={`btn-reorder-down-${i}`}
                                   disabled={i === tasks.length - 1}
-                                  onClick={() => moveTask(i, 'down')}
+                                  onClick={() => moveTask(visibleIndex, 'down')}
                                   className={`p-0.5 rounded transition-all cursor-pointer ${
                                     i === tasks.length - 1
                                       ? 'opacity-35 cursor-not-allowed'
@@ -1807,11 +1875,7 @@ export default function App() {
                               <input
                                 id={`input-habit-${i}`}
                                 value={t.name || ''}
-                                onChange={(e) => {
-                                  const newTasks = [...tasks];
-                                  newTasks[i] = { ...newTasks[i], name: e.target.value };
-                                  setTasks(newTasks);
-                                }}
+                                onChange={(e) => handleTaskEditInSettings(i, { name: e.target.value })}
                                 className={`flex-1 px-3 py-2 border rounded-xl focus:ring-2 focus:bg-white outline-none transition-all text-xs md:text-sm font-semibold ${
                                   darkMode 
                                     ? 'bg-slate-800 border-slate-700 text-slate-100 focus:text-slate-900 focus:ring-cyan-500' 
@@ -1820,19 +1884,32 @@ export default function App() {
                                 placeholder={`Habit name`}
                               />
 
-                              {tasks.length > 1 && (
+                              <div className="flex gap-1">
                                 <button
                                   type="button"
-                                  id={`btn-remove-habit-${i}`}
-                                  onClick={() => removeTaskInSettings(i)}
+                                  id={`btn-skip-habit-${i}`}
+                                  onClick={() => handleTaskEditInSettings(i, { exceptionDates: [...(t.exceptionDates || []), selectedDate] })}
                                   className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
-                                    darkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-800' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+                                    darkMode ? 'text-slate-500 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-400 hover:text-amber-500 hover:bg-amber-50'
                                   }`}
-                                  title="Delete Habit"
+                                  title="Skip for this date"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Ban className="w-4 h-4" />
                                 </button>
-                              )}
+                                {tasks.length > 1 && (
+                                  <button
+                                    type="button"
+                                    id={`btn-remove-habit-${i}`}
+                                    onClick={() => removeTaskInSettings(i)}
+                                    className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                                      darkMode ? 'text-slate-500 hover:text-red-400 hover:bg-slate-800' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'
+                                    }`}
+                                    title="Delete Habit"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-3 pl-12 mt-1">
@@ -1841,16 +1918,7 @@ export default function App() {
                                 <select
                                   id={`select-habit-type-${i}`}
                                   value={t.type || 'evergreen'}
-                                  onChange={(e) => {
-                                    const newTasks = [...tasks];
-                                    const newType = e.target.value as any;
-                                    newTasks[i] = { 
-                                      ...newTasks[i], 
-                                      type: newType,
-                                      endDate: newTasks[i].endDate || (newType !== 'evergreen' ? formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) : undefined)
-                                    };
-                                    setTasks(newTasks);
-                                  }}
+                                  onChange={(e) => { const newType = e.target.value as any; handleTaskEditInSettings(i, { type: newType, endDate: t.endDate || (newType !== 'evergreen' ? formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) : undefined) }); }}
                                   className={`px-2 py-1.5 border rounded-lg text-[11px] font-bold outline-none transition-colors ${
                                     darkMode 
                                       ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
@@ -1869,14 +1937,7 @@ export default function App() {
                                   type="date"
                                   id={`input-habit-startdate-${i}`}
                                   value={t.startDate || ''}
-                                  onChange={(e) => {
-                                    const newTasks = [...tasks];
-                                    newTasks[i] = { 
-                                      ...newTasks[i], 
-                                      startDate: e.target.value || undefined
-                                    };
-                                    setTasks(newTasks);
-                                  }}
+                                  onChange={(e) => handleTaskEditInSettings(i, { startDate: e.target.value || undefined })}
                                   className={`px-2 py-1 border rounded-lg text-[11px] font-mono font-bold outline-none transition-colors ${
                                     darkMode 
                                       ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
@@ -1891,14 +1952,7 @@ export default function App() {
                                   type="date"
                                   id={`input-habit-enddate-${i}`}
                                   value={t.endDate || ''}
-                                  onChange={(e) => {
-                                    const newTasks = [...tasks];
-                                    newTasks[i] = { 
-                                      ...newTasks[i], 
-                                      endDate: e.target.value || undefined
-                                    };
-                                    setTasks(newTasks);
-                                  }}
+                                  onChange={(e) => handleTaskEditInSettings(i, { endDate: e.target.value || undefined })}
                                   className={`px-2 py-1 border rounded-lg text-[11px] font-mono font-bold outline-none transition-colors ${
                                     darkMode 
                                       ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
@@ -1908,11 +1962,11 @@ export default function App() {
                               </div>
                             </div>
                           </motion.div>
-                        ))}
+                        )})}
                       </AnimatePresence>
                     </div>
 
-                    {tasks.length < 10 && (
+                    {visibleTasksForSelectedDate.length < 10 && (
                       <button
                         type="button"
                         id="btn-add-habit"
@@ -1925,7 +1979,7 @@ export default function App() {
                       >
                         <Plus className="w-4 h-4" />
                         <span>Add New Habit</span>
-                        <span className="text-xs font-normal opacity-70">({tasks.length}/10)</span>
+                        <span className="text-xs font-normal opacity-70">({visibleTasksForSelectedDate.length}/10)</span>
                       </button>
                     )}
 
