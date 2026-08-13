@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronLeft, 
@@ -142,8 +142,8 @@ export default function App() {
   };
 
   const getVisibleTasksForDate = useCallback((dateStr: string) => {
-    return tasks.map((task, originalIndex) => ({ ...task, originalIndex }))
-      .filter(({ type, startDate, endDate, exceptionDates, originalIndex }) => {
+    const mapped = tasks.map((task, originalIndex) => ({ ...task, originalIndex }));
+    const filtered = mapped.filter(({ type, startDate, endDate, exceptionDates, originalIndex }) => {
         // Enforce exception dates
         if (exceptionDates?.includes(dateStr)) {
           return false;
@@ -162,14 +162,16 @@ export default function App() {
         if (type === 'evergreen') return true;
         
         if (type === 'target_quest') {
-          const completionDate = Object.keys(history).find(d => history[d]?.includes(originalIndex));
+          const completionDate = Object.keys(history).sort().find(d => history[d]?.includes(originalIndex));
           if (completionDate) {
-            return dateStr === completionDate;
+            return dateStr <= completionDate;
           }
         }
         
         return true;
       });
+    console.log('getVisibleTasksForDate', dateStr, filtered.map(t=>t.name + ' (' + t.type + ')'));
+    return filtered;
   }, [tasks, history]);
 
   const visibleTasksForSelectedDate = useMemo(() => {
@@ -273,7 +275,7 @@ export default function App() {
     }
   };
 
-  const handleLocalRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLocalRestoreFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -632,8 +634,7 @@ export default function App() {
     if (visibleTasksForSelectedDate.length <= 1) return; // Must keep at least one habit active
     
     const currentTask = tasks[indexToRemove];
-    const firstHistoryDate = Object.keys(history).sort().find(d => history[d]?.includes(indexToRemove));
-    const effectiveStart = currentTask.startDate || firstHistoryDate || '0000-00-00';
+    const effectiveStart = currentTask.startDate || '0000-00-00';
     
     // If it started before the selected date, we soft delete it so it remains visible in the past
     if (effectiveStart < selectedDate) {
@@ -671,6 +672,7 @@ export default function App() {
   };
 
   const handleTaskEditInSettings = (index: number, updates: Partial<HabitTask>) => {
+console.log('handleTaskEditInSettings', {index, updates});
     const currentTask = tasks[index];
     const isOnlyDateUpdate = Object.keys(updates).every(k => k === 'startDate' || k === 'endDate' || k === 'exceptionDates');
     
@@ -681,8 +683,7 @@ export default function App() {
       return;
     }
     
-    const firstHistoryDate = Object.keys(history).sort().find(d => history[d]?.includes(index));
-    const effectiveStart = currentTask.startDate || firstHistoryDate || '0000-00-00';
+    const effectiveStart = currentTask.startDate || '0000-00-00';
     
     if (selectedDate <= effectiveStart) {
       const newTasks = [...tasks];
@@ -699,15 +700,15 @@ export default function App() {
     const newTask = { ...currentTask, ...updates, startDate: selectedDate };
     
     const newTasks = [...tasks];
-    newTasks[index] = oldTask;
-    newTasks.push(newTask);
-    const newIndex = newTasks.length - 1;
+    newTasks[index] = newTask;
+    newTasks.push(oldTask);
+    const archivedIndex = newTasks.length - 1;
     
     const updatedHistory = { ...history };
     Object.keys(updatedHistory).forEach(dateStr => {
-      if (dateStr >= selectedDate) {
+      if (dateStr < selectedDate) {
         if (updatedHistory[dateStr]?.includes(index)) {
-          updatedHistory[dateStr] = [...updatedHistory[dateStr].filter(idx => idx !== index), newIndex];
+          updatedHistory[dateStr] = [...updatedHistory[dateStr].filter(idx => idx !== index), archivedIndex];
         }
       }
     });
@@ -1918,7 +1919,18 @@ export default function App() {
                                 <select
                                   id={`select-habit-type-${i}`}
                                   value={t.type || 'evergreen'}
-                                  onChange={(e) => { const newType = e.target.value as any; handleTaskEditInSettings(i, { type: newType, endDate: t.endDate || (newType !== 'evergreen' ? formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) : undefined) }); }}
+                                  onChange={(e) => { 
+                                    const newType = e.target.value as any; 
+                                    let newEndDate = t.endDate;
+                                    if (newType === 'evergreen') {
+                                      newEndDate = undefined;
+                                    } else if (!t.endDate) {
+                                      const sd = new Date(selectedDate);
+                                      sd.setDate(sd.getDate() + 7);
+                                      newEndDate = formatDate(sd);
+                                    }
+                                    handleTaskEditInSettings(i, { type: newType, endDate: newEndDate }); 
+                                  }}
                                   className={`px-2 py-1.5 border rounded-lg text-[11px] font-bold outline-none transition-colors ${
                                     darkMode 
                                       ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-cyan-500' 
