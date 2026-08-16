@@ -425,7 +425,7 @@ export default function App() {
           currentView: savedView,
           monthlyGoal: savedMonthlyGoal
         } = JSON.parse(savedData);
-        if (Array.isArray(savedTasks) && savedTasks.length >= 1 && savedTasks.length <= 10) {
+        if (Array.isArray(savedTasks) && savedTasks.length >= 1) {
           setTasks(migrateTasksList(savedTasks));
         }
         if (savedHistory && typeof savedHistory === 'object') {
@@ -478,7 +478,13 @@ export default function App() {
     }
   }, []);
 
+  const isInitialMount = useRef(true);
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      // On first render, wait for the read effect to finish setting state before we start overwriting
+      return;
+    }
     localStorage.setItem('habit-tracker-data', JSON.stringify({ 
       tasks, 
       history, 
